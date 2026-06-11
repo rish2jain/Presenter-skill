@@ -19,26 +19,37 @@ import tempfile
 from pathlib import Path
 
 
+def _pptx_to_pdf(pptx_path, tmp):
+    """Convert to PDF in tmp. Prefers a running unoserver (unoconvert) —
+    no cold LibreOffice launch per call — falling back to soffice."""
+    if shutil.which("unoconvert"):
+        pdf = Path(tmp) / (Path(pptx_path).stem + ".pdf")
+        result = subprocess.run(
+            ["unoconvert", "--convert-to", "pdf", str(pptx_path), str(pdf)],
+            capture_output=True, text=True, timeout=180)
+        if result.returncode == 0 and pdf.is_file():
+            return pdf
+        print(f"[WARN] unoconvert failed ({result.stderr.strip()[:120]}) — "
+              "falling back to soffice", file=sys.stderr)
+    result = subprocess.run(
+        ["soffice", "--headless", "--convert-to", "pdf",
+         "--outdir", tmp, str(pptx_path)],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"LibreOffice failed: {result.stderr}")
+    pdf_files = list(Path(tmp).glob("*.pdf"))
+    if not pdf_files:
+        raise RuntimeError("No PDF output from LibreOffice")
+    return pdf_files[0]
+
+
 def render_with_libreoffice(pptx_path, out_dir, slide_filter=None):
     """Primary renderer: LibreOffice → PDF → pdftoppm → PNG."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmp:
-        # Convert to PDF
-        result = subprocess.run(
-            ["soffice", "--headless", "--convert-to", "pdf",
-             "--outdir", tmp, str(pptx_path)],
-            capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"LibreOffice failed: {result.stderr}")
-
-        pdf_files = list(Path(tmp).glob("*.pdf"))
-        if not pdf_files:
-            raise RuntimeError("No PDF output from LibreOffice")
-
-        pdf_path = pdf_files[0]
+        pdf_path = _pptx_to_pdf(pptx_path, tmp)
 
         # Convert PDF pages to PNG — per page when filtering, so 1,3,5
         # renders exactly those slides (not the 1-5 range)
@@ -151,7 +162,8 @@ def main():
 
     print(f"Rendering {pptx_path} → {args.out}/")
 
-    if not args.fallback and shutil.which("soffice") and shutil.which("pdftoppm"):
+    if not args.fallback and shutil.which("pdftoppm") and (
+            shutil.which("soffice") or shutil.which("unoconvert")):
         try:
             imgs = render_with_libreoffice(pptx_path, args.out, slide_filter)
             print(f"Rendered {len(imgs)} slides (LibreOffice)")

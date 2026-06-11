@@ -98,6 +98,8 @@ pip install pillow-heif   # only needed for HEIC (iPhone) image inputs
 pip install cairosvg      # optional: Lucide SVG icon fallback (Tabler PNG needs nothing)
 # Optional for high-fidelity QA rendering:
 # LibreOffice (soffice) + poppler (pdftoppm)
+# Optional: pip install unoserver, then run `unoserver` in the background —
+# render_slides.py auto-uses it (much faster repeated QA renders)
 ```
 
 Smoke test (validate + build + QA on the example outline):
