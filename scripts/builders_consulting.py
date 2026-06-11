@@ -68,6 +68,8 @@ def build_waterfall_slide(prs, p, pal, ctx):
             level_y = bottom - cum_after[i - 1] * scale
             B.add_rect(slide, x - gap, level_y - 0.009, gap, 0.018,
                        pal["text_muted"])
+    if p.get("bracket"):
+        _bracket_on_waterfall(slide, pal, p, bars, bottom, scale, bar_w, gap)
     B.add_rect(slide, 0.7, bottom, 11.9, 0.02, pal["surface"])
     return slide
 
@@ -89,6 +91,32 @@ def _fmt_num(v, signed=False):
     if v != int(v):
         return f"{v:{sign}.1f}"
     return f"{int(v):{sign}d}"
+
+
+def _bracket_on_waterfall(slide, pal, p, bars, bottom, scale, bar_w, gap):
+    """Difference bracket between two named bars: ┌────┐ + centered label."""
+    spec = p.get("bracket", "")
+    parts = [s.strip().strip('"') for s in spec.split(",") if s.strip()]
+    if len(parts) < 2:
+        warn(f"Bracket needs two bar labels, got: {spec!r}")
+        return
+    labels = [b[0].lower() for b in bars]
+    try:
+        ia, ib = labels.index(parts[0].lower()), labels.index(parts[1].lower())
+    except ValueError:
+        warn(f"Bracket labels not found among bars: {spec!r}")
+        return
+    (_, _, ha, _, va), (_, _, hb, _, vb) = bars[ia], bars[ib]
+    xa = 0.7 + ia * (bar_w + gap) + bar_w / 2
+    xb = 0.7 + ib * (bar_w + gap) + bar_w / 2
+    y = max(min(bottom - ha * scale, bottom - hb * scale) - 0.62, 1.55)
+    label = parts[2] if len(parts) > 2 else (
+        f"{(vb - va) / va:+.0%}" if va else _fmt_num(vb - va, signed=True))
+    B.add_rect(slide, xa, y, xb - xa, 0.018, pal["text_muted"])      # beam
+    B.add_rect(slide, xa, y, 0.018, 0.14, pal["text_muted"])          # left tick
+    B.add_rect(slide, xb - 0.018, y, 0.018, 0.14, pal["text_muted"])  # right tick
+    B.add_tb(slide, label, xa, y - 0.36, xb - xa, 0.32, size=13, bold=True,
+             color=pal["text"], align=PP_ALIGN.CENTER, font=pal["font_body"])
 
 
 # ── 2x2 matrix ───────────────────────────────────────────────────────────────

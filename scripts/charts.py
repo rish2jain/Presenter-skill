@@ -182,3 +182,56 @@ def add_benchmark_line(slide, chart, pal, spec, left, top, w, h):
     # text_muted clears 4.5:1 on every palette (accent3 does not)
     run.font.color.rgb = hex_rgb(pal["text_muted"])
     run.font.name = pal["font_label"]
+
+
+def _add_arrowhead(conn):
+    ln = conn.line._get_or_add_ln()
+    tail = etree.SubElement(ln, qn("a:tailEnd"))
+    tail.set("type", "triangle")
+    tail.set("w", "med")
+    tail.set("len", "med")
+
+
+def add_cagr_arrow(slide, chart, pal, left, top, w, h):
+    """CAGR arrow from the first to the last column of a single-series chart.
+
+    Uses the same plot-box approximation as add_benchmark_line — confirm
+    placement in visual QA.
+    """
+    values = [v for v in chart.plots[0].series[0].values if v is not None]
+    if len(values) < 2 or values[0] <= 0 or values[-1] <= 0:
+        return
+    periods = len(values) - 1
+    cagr = (values[-1] / values[0]) ** (1 / periods) - 1
+
+    axis_max = _nice_ceil(max(values) * 1.05)
+    va = chart.value_axis
+    va.maximum_scale = float(axis_max)
+    va.minimum_scale = 0.0
+
+    px, pw = left + 0.09 * w, w * 0.88
+    py, ph = top + 0.04 * h, h * 0.80
+    n = len(values)
+    x0 = px + pw * (0.5 / n)
+    x1 = px + pw * ((n - 0.5) / n)
+    y0 = py + (1 - values[0] / axis_max) * ph - 0.22
+    y1 = py + (1 - values[-1] / axis_max) * ph - 0.22
+
+    from pptx.enum.shapes import MSO_CONNECTOR
+    conn = slide.shapes.add_connector(
+        MSO_CONNECTOR.STRAIGHT, Inches(x0), Inches(y0), Inches(x1), Inches(y1))
+    conn.line.color.rgb = hex_rgb(pal["accent1"])
+    conn.line.width = Pt(2.0)
+    _add_arrowhead(conn)
+
+    from pptx.enum.text import PP_ALIGN
+    tb = slide.shapes.add_textbox(
+        Inches((x0 + x1) / 2 - 1.1), Inches(min(y0, y1) - 0.34),
+        Inches(2.2), Inches(0.3))
+    run = tb.text_frame.paragraphs[0].add_run()
+    tb.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+    run.text = f"CAGR {cagr:+.1%}"
+    run.font.size = Pt(12)
+    run.font.bold = True
+    run.font.color.rgb = hex_rgb(pal["text"])
+    run.font.name = pal["font_body"]

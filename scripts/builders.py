@@ -185,6 +185,9 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
                 from charts import add_benchmark_line
                 add_benchmark_line(slide, chart, pal, p["benchmark"],
                                    *_sc(left, top, w, h))
+            if p.get("cagr") and value in ("bar", "column", "line"):
+                from charts import add_cagr_arrow
+                add_cagr_arrow(slide, chart, pal, *_sc(left, top, w, h))
         return
     if kind == "image":
         path = resolve_image_path(value, ctx)
