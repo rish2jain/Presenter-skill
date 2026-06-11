@@ -88,3 +88,19 @@ def test_build_template_map():
     m = build_template_map(prs)
     assert "layout_map" in m
     assert "title" in m["layout_map"] or m["layout_scores"].get("title", 0) >= 0
+
+
+def test_thumbnail_grid_is_labeled(tmp_path):
+    from PIL import Image
+    from render_slides import create_thumbnail_grid
+    imgs = []
+    for i in range(3):
+        p = tmp_path / f"slide-{i + 1:02d}.png"
+        Image.new("RGB", (400, 225), (40, 40, 60)).save(p)
+        imgs.append(p)
+    out = tmp_path / "grid.png"
+    create_thumbnail_grid(imgs, out, cols=2)
+    grid = Image.open(out)
+    # badge: each cell's top-left corner carries an opaque label strip
+    corner = grid.getpixel((4, 4))
+    assert corner != (40, 40, 60), "no label badge drawn on cell 1"

@@ -136,8 +136,21 @@ def create_thumbnail_grid(imgs, out_path, cols=4):
     rows = (len(imgs) + cols - 1) // cols
     grid = Image.new("RGB", (cols * tw + (cols - 1) * 4, rows * th + (rows - 1) * 4), (30, 30, 40))
 
+    from PIL import ImageDraw, ImageFont
+    try:
+        font = ImageFont.load_default(size=max(14, th // 12))
+    except TypeError:  # Pillow < 10 has no size kwarg
+        font = ImageFont.load_default()
+
     for idx, img_path in enumerate(imgs):
         img = Image.open(img_path).resize((tw, th), Image.LANCZOS)
+        draw = ImageDraw.Draw(img)
+        label = str(idx + 1)
+        pad = 6
+        bbox = draw.textbbox((0, 0), label, font=font)
+        bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.rectangle((0, 0, bw + 2 * pad, bh + 2 * pad), fill=(0, 0, 0))
+        draw.text((pad, pad), label, fill=(255, 255, 255), font=font)
         row, col = divmod(idx, cols)
         grid.paste(img, (col * (tw + 4), row * (th + 4)))
 
