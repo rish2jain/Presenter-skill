@@ -97,7 +97,8 @@ def add_native_chart(slide, pal, chart_kind, categories, series,
     make_chart_transparent(chart)
     _style_axes(chart, pal)
 
-    accents = [pal["accent1"], pal["accent2"], pal["accent3"]]
+    accents = pal.get("chart_series") or [pal["accent1"], pal["accent2"],
+                                          pal["accent3"]]
     if chart_kind in ("pie", "doughnut"):
         chart.has_legend = True
         chart.legend.position = XL_LEGEND_POSITION.RIGHT

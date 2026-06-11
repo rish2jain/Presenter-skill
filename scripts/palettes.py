@@ -83,8 +83,53 @@ PALETTES = {
 
 DEFAULT_PALETTE = "midnight-executive"
 
+FONT_DEFAULTS = {"font_title": "Gill Sans MT", "font_body": "Calibri",
+                 "font_label": "Calibri Light"}
+REQUIRED_KEYS = {"bg", "bg_deep", "surface", "accent1", "accent2", "accent3",
+                 "text", "text_muted", "dark"}
+
+
+def _fill_defaults(pal):
+    pal.setdefault("motif", "icon-circle")
+    for k, v in FONT_DEFAULTS.items():
+        pal.setdefault(k, v)
+    pal.setdefault("chart_series",
+                   [pal["accent1"], pal["accent2"], pal["accent3"]])
+    return pal
+
+
 for _key, _pal in PALETTES.items():
-    _pal.setdefault("motif", "icon-circle")
+    _fill_defaults(_pal)
+
+
+def load_custom_palettes(palettes_dir):
+    """Merge user palette JSONs (one palette per <name>.json) into PALETTES.
+
+    Validates the required token schema; invalid files are skipped with a
+    warning (never trust external data). Returns the list of loaded names.
+    """
+    import json
+    import sys
+    from pathlib import Path
+    palettes_dir = Path(palettes_dir)
+    loaded = []
+    if not palettes_dir.is_dir():
+        return loaded
+    for f in sorted(palettes_dir.glob("*.json")):
+        try:
+            pal = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"  [WARN] palette {f.name}: unreadable ({e})", file=sys.stderr)
+            continue
+        missing = REQUIRED_KEYS - set(pal)
+        if missing or not isinstance(pal.get("dark"), bool):
+            print(f"  [WARN] palette {f.name}: missing keys "
+                  f"{sorted(missing)} — skipped", file=sys.stderr)
+            continue
+        PALETTES[f.stem] = _fill_defaults(pal)
+        loaded.append(f.stem)
+    return loaded
+
 
 VARIANT_PRESETS = {
     "a": {},

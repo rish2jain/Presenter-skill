@@ -103,3 +103,36 @@ def test_thumbnail_grid_is_labeled(tmp_path):
     grid = Image.open(out)
     # badge: each cell's top-left corner carries an opaque label strip
     assert grid.getpixel((4, 4)) == (0, 0, 0), "badge background not black at (4,4)"
+
+
+def test_every_palette_has_chart_series_token():
+    from palettes import PALETTES
+    for key, pal in PALETTES.items():
+        assert len(pal.get("chart_series", [])) >= 3, key
+
+
+def test_load_custom_palette(tmp_path):
+    import json
+    from palettes import PALETTES, load_custom_palettes
+    pdir = tmp_path / "palettes"
+    pdir.mkdir()
+    (pdir / "acme-brand.json").write_text(json.dumps({
+        "bg": "101820", "bg_deep": "0A0F14", "surface": "1E2A33",
+        "accent1": "FEE715", "accent2": "8DA9C4", "accent3": "5C946E",
+        "text": "F4F4F4", "text_muted": "9DB2BF", "dark": True}))
+    loaded = load_custom_palettes(pdir)
+    assert "acme-brand" in loaded and "acme-brand" in PALETTES
+    pal = PALETTES["acme-brand"]
+    assert pal["font_title"]                      # font defaults filled
+    assert len(pal["chart_series"]) >= 3          # token derived
+    del PALETTES["acme-brand"]                    # don't leak into other tests
+
+
+def test_invalid_custom_palette_rejected(tmp_path):
+    import json
+    from palettes import PALETTES, load_custom_palettes
+    pdir = tmp_path / "palettes"
+    pdir.mkdir()
+    (pdir / "broken.json").write_text(json.dumps({"bg": "101820"}))
+    loaded = load_custom_palettes(pdir)
+    assert "broken" not in loaded and "broken" not in PALETTES

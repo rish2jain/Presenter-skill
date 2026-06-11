@@ -290,6 +290,10 @@ def validate(slides, ctx, meta=None):
     if not slides:
         return ["Outline contains no '## Slide N:' sections"], []
 
+    deck_pal = meta.get("palette")
+    if deck_pal and deck_pal not in PALETTES:
+        warnings.append(f"unknown deck palette '{deck_pal}' — default will be used")
+
     for n, p in enumerate(slides, 1):
         where = f"Slide {n}"
         layout = p.get("layout", "bullet-list")
@@ -603,6 +607,10 @@ def build(outline_path, output_path, palette_key=None,
         "assets_dir": Path(assets_dir) if assets_dir else Path("assets"),
         "template_path": template_path,
     }
+    from palettes import load_custom_palettes
+    custom = load_custom_palettes(ctx["assets_dir"] / "palettes")
+    if custom:
+        print(f"  Loaded custom palettes: {', '.join(custom)}")
     meta, slides_data = parse_outline(outline_path.read_text(encoding="utf-8"))
     slides_data = apply_auto_agenda(meta, slides_data)
 
@@ -704,8 +712,9 @@ if __name__ == "__main__":
     parser.add_argument("outline", help="Path to outline.md")
     parser.add_argument("--output", default="deck.pptx", help="Output .pptx path")
     parser.add_argument("--palette", default=None,
-                        choices=sorted(PALETTES),
-                        help="Color palette (overrides outline front-matter)")
+                        help="Color palette: built-ins "
+                             f"({', '.join(sorted(PALETTES))}) or a custom "
+                             "palette JSON name from <assets>/palettes/")
     parser.add_argument("--template", default=None, help="Optional .pptx template")
     parser.add_argument("--assets-dir", default=None,
                         help="Root dir for user-images/ and auto/ (default: ./assets)")
