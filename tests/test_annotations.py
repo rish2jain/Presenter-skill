@@ -82,3 +82,23 @@ def test_cagr_arrow_label_on_chart_slide():
     slide = builders.LAYOUT_MAP["two-column-split"](prs, slides[0], PAL, CTX)
     # (22/10)^(1/3)-1 = 30.1%
     assert any("CAGR" in t and "30" in t for t in _texts(slide)), _texts(slide)
+
+
+AXIS_MD = """## Slide 1: EMEA revenue lags at identical scale
+**Layout:** two-column-split
+**Visual:** chart:bar
+- Axis-Max: 50
+**Data:**
+- 2023: 17
+- 2024: 22
+- Same scale as the Americas chart
+"""
+
+
+def test_axis_max_pins_value_axis():
+    _, slides = parse_outline(AXIS_MD)
+    assert slides[0]["axis_max"] == "50"
+    prs = _prs()
+    slide = builders.LAYOUT_MAP["two-column-split"](prs, slides[0], PAL, CTX)
+    chart = next(sh.chart for sh in slide.shapes if getattr(sh, "has_chart", False))
+    assert chart.value_axis.maximum_scale == 50.0

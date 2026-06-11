@@ -41,7 +41,7 @@ FIELD_KEYS = {
     "Value": "value", "Label": "label", "Callout": "callout",
     "Current": "current", "Situation": "situation",
     "Recommendation": "recommendation",
-    "Bracket": "bracket", "CAGR": "cagr",
+    "Bracket": "bracket", "CAGR": "cagr", "Axis-Max": "axis_max",
     "X-axis": "x_axis", "Y-axis": "y_axis",
     "Q1": "q1", "Q2": "q2", "Q3": "q3", "Q4": "q4",
 }

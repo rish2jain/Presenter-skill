@@ -171,8 +171,8 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
                 ]
                 for i in range(len(names))
             }
-            add_native_chart(slide, pal, value, cats, series_dict,
-                             *_sc(left, top, w, h))
+            chart = add_native_chart(slide, pal, value, cats, series_dict,
+                                     *_sc(left, top, w, h))
         else:
             vals = [
                 row[1][0] if isinstance(row[1], list) else row[1]
@@ -188,6 +188,12 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
             if p.get("cagr") and value in ("bar", "column", "line"):
                 from charts import add_cagr_arrow
                 add_cagr_arrow(slide, chart, pal, *_sc(left, top, w, h))
+        if p.get("axis_max"):
+            try:
+                chart.value_axis.maximum_scale = float(p["axis_max"])
+                chart.value_axis.minimum_scale = 0.0
+            except (ValueError, TypeError):
+                warn(f"Axis-Max not numeric: {p['axis_max']!r}")
         return
     if kind == "image":
         path = resolve_image_path(value, ctx)
