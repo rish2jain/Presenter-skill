@@ -175,3 +175,26 @@ def test_auto_agenda_off_is_identity():
     from build_deck import parse_outline, apply_auto_agenda
     meta, slides = parse_outline(TRACKED_MD.replace("**Auto-Agenda:** track\n\n", ""))
     assert apply_auto_agenda(meta, slides) == slides
+
+
+def test_stamp_appears_on_every_slide(tmp_path):
+    from build_deck import build
+    from pptx import Presentation
+    md = tmp_path / "o.md"
+    md.write_text("""**Stamp:** DRAFT
+
+## Slide 1: Costs have outgrown revenue for three years
+- Cost CAGR 12% vs revenue 4%
+- Notes: n.
+
+## Slide 2: Three levers close the gap by FY27
+- Tiering, exit, discounts
+- Notes: n.
+""")
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    for slide in prs.slides:
+        texts = [sh.text_frame.text for sh in slide.shapes
+                 if getattr(sh, "has_text_frame", False)]
+        assert "DRAFT" in texts, texts

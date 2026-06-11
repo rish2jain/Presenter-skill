@@ -86,7 +86,8 @@ META_KEYS = {"Palette": "palette", "Footer": "footer",
               "Page-Numbers": "page_numbers", "Size": "size",
               "Density": "density", "Purpose": "purpose",
               "Variant": "variant", "Motif": "motif", "Takeaway": "takeaway",
-              "Exhibits": "exhibits", "Auto-Agenda": "auto_agenda"}
+              "Exhibits": "exhibits", "Auto-Agenda": "auto_agenda",
+              "Stamp": "stamp"}
 
 
 def parse_outline(md_text):
@@ -568,6 +569,18 @@ def _add_source(slide, pal, source, exhibit_no=None):
                     color=pal["text_muted"], font=pal["font_label"])
 
 
+def _add_stamp(slide, pal, text):
+    """Bordered status tag (DRAFT, CONFIDENTIAL) top-left, above the heading."""
+    import builders
+    from pptx.enum.text import PP_ALIGN
+    box = builders.add_rect(slide, 0.7, 0.14, 1.5, 0.32, pal["bg"],
+                            line_hex=pal["accent3"], line_pt=1.0)
+    box.fill.background()  # outline only — works on photos and gradients
+    builders.add_tb(slide, text.upper(), 0.7, 0.16, 1.5, 0.28, size=11,
+                    bold=True, color=pal["text_muted"], font=pal["font_label"],
+                    align=PP_ALIGN.CENTER)
+
+
 def build(outline_path, output_path, palette_key=None,
           template_path=None, assets_dir=None, check_only=False, size=None,
           density=None, variant=None):
@@ -651,6 +664,8 @@ def build(outline_path, output_path, palette_key=None,
                 exhibit_no += 1
                 _add_source(slide, pal, p["source"],
                             exhibit_no if exhibits_on else None)
+            if not templated and meta.get("stamp"):
+                _add_stamp(slide, pal, meta["stamp"])
             built_slides.append(slide)
         except Exception as e:
             failures += 1
