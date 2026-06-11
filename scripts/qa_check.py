@@ -288,11 +288,34 @@ def dump_text(pptx_path):
             print(f"[notes] {slide.notes_slide.notes_text_frame.text}")
 
 
+NUM_TOKEN_RX = re.compile(
+    r"[$€£]?\d[\d,.]*\s*(?:%|bn|B|M|k|x|pp|bps)?|FY\d{2,4}|Q[1-4]\s?\d{2,4}",
+    re.I)
+
+
+def dump_numbers(pptx_path):
+    """All numeric/period tokens per slide — input for the LLM
+    cross-slide consistency check (see references/qa-guide.md)."""
+    prs = Presentation(str(pptx_path))
+    for n, slide in enumerate(prs.slides, 1):
+        tokens = []
+        for shape in iter_shapes(slide.shapes):
+            if getattr(shape, "has_text_frame", False):
+                tokens += [t.strip() for t in
+                           NUM_TOKEN_RX.findall(shape.text_frame.text)
+                           if t.strip()]
+        title = _slide_title_text(slide)
+        print(f"Slide {n} [{title[:60]}]: {', '.join(tokens) if tokens else '—'}")
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: qa_check.py deck.pptx [--text] [--accessibility]")
+        print("Usage: qa_check.py deck.pptx [--text] [--numbers] [--accessibility]")
         sys.exit(2)
     path = Path(sys.argv[1])
+    if "--numbers" in sys.argv:
+        dump_numbers(path)
+        sys.exit(0)
     if "--text" in sys.argv:
         dump_text(path)
         sys.exit(0)

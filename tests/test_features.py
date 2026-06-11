@@ -151,3 +151,18 @@ def test_custom_palette_with_non_hex_colors_rejected(tmp_path):
         "text": "F4F4F4", "text_muted": "9DB2BF", "dark": True}))
     assert load_custom_palettes(pdir) == []
     assert "named" not in PALETTES
+
+
+def test_dump_numbers_extracts_per_slide(capsys, tmp_path):
+    from pptx import Presentation
+    from pptx.util import Inches
+    from qa_check import dump_numbers
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(1))
+    tb.text_frame.text = "Revenue grew 12% to $4.2B in FY25"
+    p = tmp_path / "n.pptx"
+    prs.save(str(p))
+    dump_numbers(p)
+    out = capsys.readouterr().out
+    assert "Slide 1" in out and "12%" in out and "$4.2B" in out and "FY25" in out

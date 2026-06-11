@@ -107,3 +107,23 @@ Always deliver in one message:
 1. The `.pptx` file path (attach or share via your environment's file delivery)
 2. A thumbnail grid image showing all slides
 3. A brief summary: "Here's your [N]-slide deck on [topic]. Covers: [list key slides]. Ready to edit in PowerPoint."
+
+---
+
+## Cross-slide consistency check (LLM stage)
+
+Deterministic checks can't catch a title that contradicts its chart or an
+exec-summary KPI that doesn't match the body. After the programmatic checks:
+
+1. Run `python3 scripts/qa_check.py deck.pptx --numbers` and
+   `python3 scripts/build_deck.py outline.md --titles`.
+2. Review the two outputs together and check:
+   - **Internal arithmetic** — components sum to stated totals (waterfall
+     deltas vs endpoints, funnel stages, "3 levers" vs 3 items).
+   - **Repeated KPIs** — the same metric quoted on multiple slides has the
+     same value everywhere (exec summary vs body vs appendix).
+   - **Title vs exhibit** — each action title's claim ("doubled", "-39%",
+     "largest segment") is actually supported by that slide's numbers.
+   - **Periods** — FY/quarter labels are consistent (no FY25 vs 2025 drift).
+3. Fix discrepancies in the outline (never hand-edit the deck), rebuild,
+   re-run. This stage is mandatory for consulting/board decks.
