@@ -24,6 +24,7 @@
 - 2025: 67
 - 2026: 104
 - 2027: 158
+- CAGR: on
 - Heading: "AI infrastructure market growing 32% YoY"
 - Infrastructure layer captures 41% of total AI spend
 - Top 5 hyperscalers account for 68% of capex
