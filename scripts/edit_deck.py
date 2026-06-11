@@ -296,6 +296,53 @@ def clean_orphans(src_dir):
     return True
 
 
+A_T = "{http://schemas.openxmlformats.org/drawingml/2006/main}t"
+
+
+def _slide_xml_files(src_dir):
+    """slideN.xml paths sorted by N."""
+    slides_dir = Path(src_dir) / "ppt" / "slides"
+    files = [p for p in slides_dir.glob("slide*.xml") if p.stem[5:].isdigit()]
+    return sorted(files, key=lambda p: int(p.stem[5:]))
+
+
+def inventory(src_dir):
+    """Every text run in every slide as [{slide, run, text}] (document order).
+
+    'run' is the index of the <a:t> within its slide — the stable address
+    replace_runs() uses. Returns the list (the CLI prints it as JSON).
+    """
+    out = []
+    for f in _slide_xml_files(src_dir):
+        n = int(f.stem[5:])
+        tree = _xml(f)
+        for i, t in enumerate(tree.iter(A_T)):
+            out.append({"slide": n, "run": i, "text": t.text or ""})
+    return out
+
+
+def replace_runs(src_dir, edits_json):
+    """Apply [{slide, run, text}] edits; formatting (rPr) is untouched."""
+    import json
+    edits = json.loads(Path(edits_json).read_text(encoding="utf-8"))
+    by_slide = {}
+    for e in edits:
+        by_slide.setdefault(int(e["slide"]), {})[int(e["run"])] = e["text"]
+    for f in _slide_xml_files(src_dir):
+        n = int(f.stem[5:])
+        if n not in by_slide:
+            continue
+        tree = _xml(f)
+        runs = list(tree.iter(A_T))
+        for idx, new_text in by_slide[n].items():
+            if idx >= len(runs):
+                raise SystemExit(
+                    f"slide {n}: run {idx} out of range (has {len(runs)})")
+            runs[idx].text = new_text
+        _write_xml(tree, f)
+        print(f"slide {n}: {len(by_slide[n])} run(s) replaced")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -309,6 +356,9 @@ def main():
     p_ro = sub.add_parser("reorder"); p_ro.add_argument("dir"); p_ro.add_argument(
         "order", help="Comma-separated positions, e.g. 3,1,2,4")
     p_cl = sub.add_parser("clean"); p_cl.add_argument("dir")
+    p_inv = sub.add_parser("inventory"); p_inv.add_argument("dir")
+    p_rep = sub.add_parser("replace"); p_rep.add_argument("dir")
+    p_rep.add_argument("edits", help="JSON: [{slide, run, text}, ...]")
     args = parser.parse_args()
 
     ok = True
@@ -326,6 +376,11 @@ def main():
         ok = reorder(args.dir, args.order)
     elif args.cmd == "clean":
         ok = clean_orphans(args.dir)
+    elif args.cmd == "inventory":
+        import json
+        print(json.dumps(inventory(args.dir), indent=2, ensure_ascii=False))
+    elif args.cmd == "replace":
+        replace_runs(args.dir, args.edits)
     sys.exit(0 if ok else 1)
 
 

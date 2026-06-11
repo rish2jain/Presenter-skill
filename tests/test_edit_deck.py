@@ -48,3 +48,37 @@ def test_duplicate_by_position(unpacked_three_slides, tmp_path):
     with zipfile.ZipFile(out) as zf:
         slide_parts = [n for n in zf.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
     assert len(slide_parts) == 7  # 6 original + 1 duplicate
+
+
+def test_inventory_and_replace_roundtrip(tmp_path):
+    import json
+    from pptx import Presentation
+    from pptx.util import Inches
+    import edit_deck
+
+    # fixture deck: one slide, one textbox
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    run = tb.text_frame.paragraphs[0].add_run()
+    run.text = "Old headline"
+    run.font.bold = True
+    src = tmp_path / "deck.pptx"
+    prs.save(str(src))
+
+    work = tmp_path / "unpacked"
+    edit_deck.unpack(str(src), str(work))
+    inv = edit_deck.inventory(str(work))
+    assert inv == [{"slide": 1, "run": 0, "text": "Old headline"}]
+
+    edits = tmp_path / "edits.json"
+    edits.write_text(json.dumps(
+        [{"slide": 1, "run": 0, "text": "New headline"}]))
+    edit_deck.replace_runs(str(work), str(edits))
+    out = tmp_path / "out.pptx"
+    edit_deck.pack(str(work), str(out))
+
+    prs2 = Presentation(str(out))
+    runs = prs2.slides[0].shapes[0].text_frame.paragraphs[0].runs
+    assert runs[0].text == "New headline"
+    assert runs[0].font.bold  # formatting preserved
