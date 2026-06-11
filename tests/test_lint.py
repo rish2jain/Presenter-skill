@@ -76,3 +76,24 @@ def test_palette_whitelist_flags_off_palette_color():
     issues = lint_deck(prs, palette_key="midnight-executive")
     assert any("FF00FF" in e for e in issues["error"]), issues
     assert not any("C9A84C" in e for e in issues["error"]), issues
+
+
+def test_missing_font_warned(monkeypatch):
+    import pptx_lint
+    monkeypatch.setattr(pptx_lint, "installed_fonts",
+                        lambda: {"calibri", "arial"})
+    prs = _prs()
+    slide = _blank(prs)
+    tb = _tb(slide, "hello", 1.0, 1.0)
+    tb.text_frame.paragraphs[0].runs[0].font.name = "Gill Sans MT"
+    issues = pptx_lint.lint_deck(prs)
+    assert any("Gill Sans MT" in w for w in issues["warn"]), issues
+
+
+def test_font_check_skipped_when_inventory_unavailable(monkeypatch):
+    import pptx_lint
+    monkeypatch.setattr(pptx_lint, "installed_fonts", lambda: None)
+    prs = _prs()
+    _tb(_blank(prs), "hello", 1.0, 1.0)
+    issues = pptx_lint.lint_deck(prs)
+    assert not any("not installed" in w for w in issues["warn"]), issues

@@ -152,11 +152,57 @@ def check_inventory(prs, issues, palette_key=None):
             f"{MAX_COLORS}; pass --palette to enforce a whitelist")
 
 
+def installed_fonts():
+    """Lowercased family names visible to the renderer, or None if unknowable.
+
+    fc-list is the most truthful source for what LibreOffice will see;
+    matplotlib's font_manager is the cross-platform fallback.
+    """
+    import shutil
+    import subprocess
+    if shutil.which("fc-list"):
+        try:
+            out = subprocess.run(["fc-list", ":", "family"],
+                                 capture_output=True, text=True, timeout=20)
+            if out.returncode == 0:
+                names = set()
+                for line in out.stdout.splitlines():
+                    for fam in line.split(","):
+                        names.add(fam.strip().lower())
+                if names:
+                    return names
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    try:
+        from matplotlib import font_manager
+        return {Path(f).stem.split("-")[0].lower()
+                for f in font_manager.findSystemFonts()} or None
+    except ImportError:
+        return None
+
+
+def check_fonts_installed(prs, issues):
+    installed = installed_fonts()
+    if installed is None:
+        issues["warn"].append(
+            "cannot enumerate installed fonts (no fc-list or matplotlib) — "
+            "visual QA may silently substitute fonts")
+        return
+    fonts, _ = collect_inventory(prs)
+    for name, slides in sorted(fonts.items()):
+        if name.lower() not in installed:
+            where = ", ".join(str(s) for s in sorted(slides)[:5])
+            issues["warn"].append(
+                f"font '{name}' (slide(s) {where}) not installed — renderer "
+                "will substitute; QA thumbnails won't match PowerPoint")
+
+
 def lint_deck(prs, palette_key=None):
     issues = {"error": [], "warn": []}
     check_jiggle(prs, issues)
     check_page_sequence(prs, issues)
     check_inventory(prs, issues, palette_key)
+    check_fonts_installed(prs, issues)
     return issues
 
 
