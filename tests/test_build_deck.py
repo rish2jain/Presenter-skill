@@ -245,3 +245,21 @@ def test_auto_agenda_divider_first_gets_no_overview():
     out = apply_auto_agenda(meta, slides)
     overviews = [s for s in out if s["layout"] == "agenda" and not s.get("current")]
     assert not overviews, [s.get("heading") for s in out]
+
+
+def test_heading_attributes_set_layout_and_palette():
+    from build_deck import parse_outline
+    _, slides = parse_outline(
+        "## Slide 1: Margin bridge tells the story {layout=waterfall palette=aurora}\n"
+        "**Data:**\n- FY25: 46\n- FY27: total\n")
+    assert slides[0]["layout"] == "waterfall"
+    assert slides[0]["palette"] == "aurora"
+    assert slides[0]["heading"] == "Margin bridge tells the story"
+
+
+def test_explicit_layout_line_overrides_heading_attr():
+    from build_deck import parse_outline
+    _, slides = parse_outline(
+        "## Slide 1: T {layout=waterfall}\n**Layout:** funnel\n"
+        "**Data:**\n- A: 10\n- B: 5\n")
+    assert slides[0]["layout"] == "funnel"

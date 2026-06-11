@@ -123,7 +123,17 @@ def parse_outline(md_text):
             in_data = False
             m = re.match(r"## Slide \d+:\s*(.*)", line)
             if m:
-                current["heading"] = m.group(1).strip()
+                heading = m.group(1).strip()
+                m_attr = re.search(r"\{([^{}]*)\}\s*$", heading)
+                if m_attr:
+                    for k, v in re.findall(r"(\w[\w-]*)=([\w./#-]+)",
+                                           m_attr.group(1)):
+                        if k == "layout":
+                            current["layout"] = v.lower()
+                        elif k == "palette":
+                            current["palette"] = v.lower()
+                    heading = heading[:m_attr.start()].strip()
+                current["heading"] = heading
             continue
         if current is None:
             continue
