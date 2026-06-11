@@ -19,9 +19,9 @@ from pptx import Presentation
 from pptx.util import Inches
 
 from builders import LAYOUT_MAP, ctx_blank_layout
-from helpers import add_speaker_notes, parse_visual, resolve_image_path
+from helpers import add_speaker_notes, parse_visual, resolve_image_path, warn
 from narrative import check_unsourced_stats, validate_narrative
-from palettes import PALETTES, apply_variant, get_palette
+from palettes import PALETTES, apply_variant, get_palette, load_custom_palettes
 from smart_layout import auto_layout
 from template_helpers import (find_best_layout, label_placeholder_names,
                               load_template_config, palette_from_theme,
@@ -133,6 +133,9 @@ def parse_outline(md_text):
                             current["layout"] = v.lower()
                         elif k == "palette":
                             current["palette"] = v.lower()
+                        else:
+                            warn(f"line {lineno}: unknown heading attribute "
+                                 f"'{k}' ignored (supported: layout, palette)")
                     heading = heading[:m_attr.start()].strip()
                 current["heading"] = heading
             continue
@@ -608,10 +611,12 @@ def build(outline_path, output_path, palette_key=None,
         "assets_dir": Path(assets_dir) if assets_dir else Path("assets"),
         "template_path": template_path,
     }
-    from palettes import load_custom_palettes
     custom = load_custom_palettes(ctx["assets_dir"] / "palettes")
     if custom:
         print(f"  Loaded custom palettes: {', '.join(custom)}")
+    if palette_key and palette_key not in PALETTES:
+        print(f"  [WARN] unknown --palette '{palette_key}' — using default",
+              file=sys.stderr)
     meta, slides_data = parse_outline(outline_path.read_text(encoding="utf-8"))
     slides_data = apply_auto_agenda(meta, slides_data)
 

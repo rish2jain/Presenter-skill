@@ -4,6 +4,8 @@ Design rules encoded here (per the 60-30-10 dominance rule): bg/bg_deep/surface
 carry ~60-70% of visual weight, accent1 is THE accent (~10%), accent2/3 support.
 Muted text colors are chosen to clear WCAG 4.5:1 against `bg`.
 """
+import re
+
 from pptx.dml.color import RGBColor
 
 PALETTES = {
@@ -125,6 +127,15 @@ def load_custom_palettes(palettes_dir):
         if missing or not isinstance(pal.get("dark"), bool):
             print(f"  [WARN] palette {f.name}: missing keys "
                   f"{sorted(missing)} — skipped", file=sys.stderr)
+            continue
+        hex_keys = REQUIRED_KEYS - {"dark"}
+        bad = [k for k in sorted(hex_keys)
+               if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(pal.get(k, "")))]
+        bad += [f"chart_series[{i}]" for i, c in enumerate(pal.get("chart_series", []))
+                if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(c))]
+        if bad:
+            print(f"  [WARN] palette {f.name}: non-hex color values "
+                  f"{bad} — skipped", file=sys.stderr)
             continue
         PALETTES[f.stem] = _fill_defaults(pal)
         loaded.append(f.stem)

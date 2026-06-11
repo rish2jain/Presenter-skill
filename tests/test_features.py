@@ -121,11 +121,13 @@ def test_load_custom_palette(tmp_path):
         "accent1": "FEE715", "accent2": "8DA9C4", "accent3": "5C946E",
         "text": "F4F4F4", "text_muted": "9DB2BF", "dark": True}))
     loaded = load_custom_palettes(pdir)
-    assert "acme-brand" in loaded and "acme-brand" in PALETTES
-    pal = PALETTES["acme-brand"]
-    assert pal["font_title"]                      # font defaults filled
-    assert len(pal["chart_series"]) >= 3          # token derived
-    del PALETTES["acme-brand"]                    # don't leak into other tests
+    try:
+        assert "acme-brand" in loaded and "acme-brand" in PALETTES
+        pal = PALETTES["acme-brand"]
+        assert pal["font_title"]                      # font defaults filled
+        assert len(pal["chart_series"]) >= 3          # token derived
+    finally:
+        PALETTES.pop("acme-brand", None)              # don't leak into other tests
 
 
 def test_invalid_custom_palette_rejected(tmp_path):
@@ -136,3 +138,16 @@ def test_invalid_custom_palette_rejected(tmp_path):
     (pdir / "broken.json").write_text(json.dumps({"bg": "101820"}))
     loaded = load_custom_palettes(pdir)
     assert "broken" not in loaded and "broken" not in PALETTES
+
+
+def test_custom_palette_with_non_hex_colors_rejected(tmp_path):
+    import json
+    from palettes import PALETTES, load_custom_palettes
+    pdir = tmp_path / "palettes"
+    pdir.mkdir()
+    (pdir / "named.json").write_text(json.dumps({
+        "bg": "red", "bg_deep": "0A0F14", "surface": "1E2A33",
+        "accent1": "FEE715", "accent2": "8DA9C4", "accent3": "5C946E",
+        "text": "F4F4F4", "text_muted": "9DB2BF", "dark": True}))
+    assert load_custom_palettes(pdir) == []
+    assert "named" not in PALETTES

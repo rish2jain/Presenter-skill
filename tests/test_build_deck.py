@@ -279,3 +279,18 @@ def test_validation_errors_carry_line_numbers():
     errors, _ = validate(slides, {"outline_dir": Path("."),
                                   "assets_dir": Path("assets")})
     assert any("Slide 2 (line 5)" in e for e in errors), errors
+
+
+def test_unknown_cli_palette_warns(tmp_path, capsys):
+    from build_deck import build
+    md = tmp_path / "o.md"
+    md.write_text("## Slide 1: Costs have outgrown revenue for years\n"
+                  "- a bullet\n- Notes: n.\n")
+    assert build(str(md), str(tmp_path / "d.pptx"), palette_key="auroa")
+    assert "unknown --palette" in capsys.readouterr().err
+
+
+def test_unknown_heading_attr_warns(capsys):
+    from build_deck import parse_outline
+    parse_outline("## Slide 1: T {laoyut=waterfall}\n- b\n")
+    assert "unknown heading attribute" in capsys.readouterr().err
