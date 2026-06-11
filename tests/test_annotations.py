@@ -102,3 +102,36 @@ def test_axis_max_pins_value_axis():
     slide = builders.LAYOUT_MAP["two-column-split"](prs, slides[0], PAL, CTX)
     chart = next(sh.chart for sh in slide.shapes if getattr(sh, "has_chart", False))
     assert chart.value_axis.maximum_scale == 50.0
+
+
+CAGR_AXIS_MD = """## Slide 1: Revenue compounds at double digits on a fixed scale
+**Layout:** two-column-split
+**Visual:** chart:bar
+- CAGR: on
+- Axis-Max: 50
+**Data:**
+- 2021: 10
+- 2022: 13
+- 2023: 17
+- 2024: 22
+- Same scale as sibling slides
+"""
+
+
+def test_cagr_arrow_respects_axis_max():
+    _, slides = parse_outline(CAGR_AXIS_MD)
+    prs = _prs()
+    slide = builders.LAYOUT_MAP["two-column-split"](prs, slides[0], PAL, CTX)
+    chart = next(sh.chart for sh in slide.shapes if getattr(sh, "has_chart", False))
+    assert chart.value_axis.maximum_scale == 50.0
+    assert any("CAGR" in t for t in _texts(slide))
+
+
+def test_cagr_label_on_declining_series():
+    md = CAGR_MD.replace("- 2021: 10", "- 2021: 22").replace("- 2024: 22",
+                                                             "- 2024: 10")
+    _, slides = parse_outline(md)
+    prs = _prs()
+    slide = builders.LAYOUT_MAP["two-column-split"](prs, slides[0], PAL, CTX)
+    # (10/22)^(1/3)-1 = -23.1%
+    assert any("CAGR" in t and "-23" in t for t in _texts(slide)), _texts(slide)

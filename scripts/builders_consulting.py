@@ -109,7 +109,7 @@ def _bracket_on_waterfall(slide, pal, p, bars, bottom, scale, bar_w, gap):
     (_, _, ha, _, va), (_, _, hb, _, vb) = bars[ia], bars[ib]
     xa = 0.7 + ia * (bar_w + gap) + bar_w / 2
     xb = 0.7 + ib * (bar_w + gap) + bar_w / 2
-    y = max(min(bottom - ha * scale, bottom - hb * scale) - 0.62, 1.55)
+    y = max(min(bottom - ha * scale, bottom - hb * scale) - 0.66, 1.55)
     label = parts[2] if len(parts) > 2 else (
         f"{(vb - va) / va:+.0%}" if va else _fmt_num(vb - va, signed=True))
     B.add_rect(slide, xa, y, xb - xa, 0.018, pal["text_muted"])      # beam

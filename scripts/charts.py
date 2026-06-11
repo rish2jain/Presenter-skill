@@ -192,7 +192,7 @@ def _add_arrowhead(conn):
     tail.set("len", "med")
 
 
-def add_cagr_arrow(slide, chart, pal, left, top, w, h):
+def add_cagr_arrow(slide, chart, pal, left, top, w, h, axis_max=None):
     """CAGR arrow from the first to the last column of a single-series chart.
 
     Uses the same plot-box approximation as add_benchmark_line — confirm
@@ -204,8 +204,11 @@ def add_cagr_arrow(slide, chart, pal, left, top, w, h):
     periods = len(values) - 1
     cagr = (values[-1] / values[0]) ** (1 / periods) - 1
 
-    axis_max = _nice_ceil(max(values) * 1.05)
     va = chart.value_axis
+    if axis_max is None:
+        existing = va.maximum_scale  # set earlier by add_benchmark_line, or None
+        new_max = _nice_ceil(max(values) * 1.05)
+        axis_max = max(existing, new_max) if existing else new_max
     va.maximum_scale = float(axis_max)
     va.minimum_scale = 0.0
 

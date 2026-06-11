@@ -187,7 +187,12 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
                                    *_sc(left, top, w, h))
             if p.get("cagr") and value in ("bar", "column", "line"):
                 from charts import add_cagr_arrow
-                add_cagr_arrow(slide, chart, pal, *_sc(left, top, w, h))
+                try:
+                    user_max = float(p["axis_max"]) if p.get("axis_max") else None
+                except (ValueError, TypeError):
+                    user_max = None
+                add_cagr_arrow(slide, chart, pal, *_sc(left, top, w, h),
+                               axis_max=user_max)
         if p.get("axis_max"):
             try:
                 chart.value_axis.maximum_scale = float(p["axis_max"])
