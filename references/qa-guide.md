@@ -31,6 +31,22 @@ python3 scripts/qa_check.py output.pptx --text
 
 ---
 
+## Step 0b — Deck Lint (cross-slide consistency)
+
+```bash
+python3 scripts/pptx_lint.py output.pptx [--palette <palette>]
+```
+
+Complements `qa_check.py` with deck-wide checks that per-slide inspection misses:
+- **Anti-jiggle:** recurring elements (page numbers, footers, kickers) must sit at identical coordinates on every slide.
+- **Page-number sequence:** consecutive, no gaps or duplicates.
+- **Font inventory:** flags decks with more distinct fonts than the threshold (inconsistent branding).
+- **Palette whitelist:** with `--palette`, any run or fill color outside the palette (plus known extras) is reported as an error.
+
+Run this after `qa_check.py`; fix jiggle and off-palette colors in the outline before visual inspection.
+
+---
+
 ## Step 1 — Render All Slides as Images
 
 ```bash

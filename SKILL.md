@@ -70,7 +70,9 @@ After gathering answers, research the topic if needed using available tools.
 ## Phase 3 — Generation
 
 1. If user images are involved, normalize first: `python3 scripts/prep_images.py assets/user-images/`
-2. Run `python3 scripts/build_deck.py outline.md --output deck.pptx [--palette X] [--template T.pptx] [--assets-dir DIR] [--density compact|comfortable] [--variant a|b|c]`
+2. Run `python3 scripts/build_deck.py outline.md --output deck.pptx [--palette X] [--template T.pptx] [--assets-dir DIR] [--density compact|comfortable] [--variant a|b|c] [--ghost]`
+   - `--ghost` builds a skeleton deck (real action titles, grey labeled exhibit placeholders) for storyline sign-off before investing in content.
+   - Custom brand palettes: drop `<name>.json` into `<assets>/palettes/` and use `--palette <name>` (schema: `references/generation-guide.md`).
 3. The build fails fast on validation errors. If any slide fails during build, **no .pptx is written**.
 
 Optional: `python3 scripts/gen_appendix.py outline.md` for pitch/strategy appendix skeleton.
@@ -79,12 +81,14 @@ Optional: `python3 scripts/gen_appendix.py outline.md` for pitch/strategy append
 
 ## Phase 4 — QA (Required)
 
-Never skip QA. Four complementary checks (see `references/qa-guide.md`):
+Never skip QA. Six complementary checks (see `references/qa-guide.md`):
 
 1. **Programmatic:** `python3 scripts/qa_check.py deck.pptx` (add `--accessibility` for WCAG AA strict mode)
-2. **Content diff:** `python3 scripts/diff_deck.py outline.md deck.pptx` — catches missing text vs outline
-3. **Visual:** `python3 scripts/render_slides.py deck.pptx --grid --out assets/qa-thumbs/` + fresh-eyes subagent
-4. **Fix loop:** edit outline → rebuild → re-run all checks until clean
+2. **Deck lint:** `python3 scripts/pptx_lint.py deck.pptx --palette <palette>` — cross-slide consistency (jiggle, page sequence, off-palette colors, missing fonts)
+3. **Content diff:** `python3 scripts/diff_deck.py outline.md deck.pptx` — catches missing text vs outline
+4. **Visual:** `python3 scripts/render_slides.py deck.pptx --grid --out assets/qa-thumbs/` + fresh-eyes subagent (grid cells are numbered)
+5. **Consistency (LLM):** `python3 scripts/qa_check.py deck.pptx --numbers` + titles test — cross-check totals, repeated KPIs, title claims (see `references/qa-guide.md`)
+6. **Fix loop:** edit outline → rebuild → re-run all checks until clean
 
 Deliver the `.pptx` and the thumbnail grid together.
 

@@ -58,3 +58,20 @@ prs.save("edited.pptx")
 ```
 
 This preserves all formatting because only run text changes.
+
+## Batch text edits: inventory → replace
+
+For text-only changes across many slides, prefer the JSON workflow over
+hand-editing XML:
+
+    python3 scripts/edit_deck.py unpack deck.pptx work/
+    python3 scripts/edit_deck.py inventory work/ > inventory.json
+    # edit the "text" fields you want to change (keep slide/run addresses),
+    # save the changed entries (only those) as edits.json
+    python3 scripts/edit_deck.py replace work/ edits.json
+    python3 scripts/edit_deck.py pack work/ deck-edited.pptx
+
+Addresses are slideN.xml file numbers (these differ from deck position
+after a reorder — correlate with the `list` subcommand). Run formatting
+(bold/size/color) is preserved — only the text changes. Then run the
+standard Phase 4 QA on the result.

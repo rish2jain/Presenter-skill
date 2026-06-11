@@ -78,3 +78,15 @@ def add_progress_bar(slide, pal, label, percent, value_label, left, top,
     add_tb(slide, value_label, left + width - 0.25, top, 0.9, height,
            size=13, bold=True, color=pal["accent1"], font=pal["font_body"])
 ```
+
+## Annotations
+
+- **Benchmark line:** `- Benchmark: 120 Industry average` (existing).
+- **CAGR arrow:** `- CAGR: on` — computed from first/last values of a
+  single-series bar/column/line chart. Plot-box placement is approximate:
+  always confirm in visual QA.
+- **Same scale:** `- Axis-Max: N` pins the value axis (applied last, so it
+  wins over the axis max set by Benchmark/CAGR). Use the same N across
+  slides being compared.
+- **Waterfall bracket:** `- Bracket: <bar A>, <bar B>[, "label"]` — exact
+  geometry (shape-drawn), no QA caveat.

@@ -277,3 +277,47 @@ Body/bullets render at 16–17pt, captions/labels 10–13pt, titles 30–54pt in
 ## Charts
 
 Declare `**Visual:** chart:<type>` plus a `**Data:**` block (see Slide 3 above) and the build pipeline generates a native, palette-styled chart with a transparent background — fully editable in PowerPoint. For custom chart code or shape-based visuals (progress bars, stat cards), see `references/charts-guide.md`.
+
+## Newer directives (June 2026)
+
+**Heading attributes** — set layout/palette on the heading line, keeping
+directives off content bullets:
+
+    ## Slide 7: Margin bridge tells the story {layout=waterfall palette=aurora}
+
+Values must be unquoted (`layout=two-column-split`, not `layout="..."`);
+unknown keys emit a warning. An explicit `**Layout:**` line still wins if
+both are present.
+
+**Deck meta:**
+- `**Auto-Agenda:** on` — auto-insert an agenda slide (sections = your
+  section-divider headings, appendix excluded) after the title slide.
+- `**Auto-Agenda:** track` — additionally insert a "where we are" agenda with
+  the current section highlighted after every section divider.
+- `**Stamp:** DRAFT` — bordered status tag on every slide (also:
+  CONFIDENTIAL, FOR DISCUSSION).
+
+**Chart/exhibit directives (per slide):**
+- `- Axis-Max: 50` — pin the chart value axis; use the same value on sibling
+  slides for honest same-scale comparison.
+- `- CAGR: on` — growth arrow from first to last column (bar/column/line,
+  single series).
+- `- Bracket: FY25, FY27` — waterfall difference bracket between two named
+  bars; auto-labels the % change. Optional third part = custom label:
+  `- Bracket: FY25, FY27, "Run-rate reset"`.
+
+**New layouts:**
+- `bar-mekko` — profit pool: `- Bar: Label="EMEA" Size="30" Value="6"`
+  (width ∝ Size, height = Value; Size>0, Value>=0). 2+ bars required.
+- `matrix-2x2` bubbles — add `Size="40"` to `- Item:` rows; bubble area
+  scales with Size (BCG growth–share style).
+
+**Custom palettes:** drop `<name>.json` into `<assets>/palettes/`:
+
+    {"bg": "101820", "bg_deep": "0A0F14", "surface": "1E2A33",
+     "accent1": "FEE715", "accent2": "8DA9C4", "accent3": "5C946E",
+     "text": "F4F4F4", "text_muted": "9DB2BF", "dark": true}
+
+All nine keys required; colors must be 6-char hex. Optional keys:
+`font_title`, `font_body`, `font_label`, `chart_series` (list of hex —
+chart series colors), `motif`. Then `--palette <name>`.
