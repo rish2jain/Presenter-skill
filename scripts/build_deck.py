@@ -98,7 +98,7 @@ def parse_outline(md_text):
     """
     meta, slides, current, in_data = {}, [], None, False
 
-    for raw in md_text.splitlines():
+    for lineno, raw in enumerate(md_text.splitlines(), 1):
         line = raw.strip()
         if current is None and line.startswith("**"):
             key, _, value = line.lstrip("*").partition(":**")
@@ -118,6 +118,7 @@ def parse_outline(md_text):
                        "data": [], "table_rows": [], "steps": [], "tiles": [],
                        "matrix_items": [], "bars": [], "milestones": [],
                        "left_bullets": [], "right_bullets": []}
+            current["_line"] = lineno
             if "_appendix_from" in meta:
                 current["_appendix"] = True
             in_data = False
@@ -295,7 +296,7 @@ def validate(slides, ctx, meta=None):
         warnings.append(f"unknown deck palette '{deck_pal}' — default will be used")
 
     for n, p in enumerate(slides, 1):
-        where = f"Slide {n}"
+        where = f"Slide {n} (line {p['_line']})" if p.get("_line") else f"Slide {n}"
         layout = p.get("layout", "bullet-list")
         if layout not in LAYOUT_MAP:
             errors.append(f"{where}: unknown layout '{layout}' "

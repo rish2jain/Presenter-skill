@@ -263,3 +263,19 @@ def test_explicit_layout_line_overrides_heading_attr():
         "## Slide 1: T {layout=waterfall}\n**Layout:** funnel\n"
         "**Data:**\n- A: 10\n- B: 5\n")
     assert slides[0]["layout"] == "funnel"
+
+
+def test_validation_errors_carry_line_numbers():
+    from build_deck import parse_outline, validate
+    md = ("## Slide 1: Costs have outgrown revenue for years\n"
+          "- a bullet\n"
+          "- Notes: n.\n"
+          "\n"
+          "## Slide 2: Bad chart slide misses its data block\n"
+          "**Layout:** waterfall\n"
+          "- Notes: n.\n")
+    _, slides = parse_outline(md)
+    assert slides[0]["_line"] == 1 and slides[1]["_line"] == 5
+    errors, _ = validate(slides, {"outline_dir": Path("."),
+                                  "assets_dir": Path("assets")})
+    assert any("Slide 2 (line 5)" in e for e in errors), errors
