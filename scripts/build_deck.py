@@ -388,6 +388,15 @@ def validate(slides, ctx, meta=None):
             if len(ok_bars) < 2:
                 errors.append(f"{where}: bar-mekko needs 2+ '- Bar: "
                               'Label=".." Size=".." Value=".."\' rows')
+            for bar in ok_bars:
+                try:
+                    size, value = float(bar["size"]), float(bar["value"])
+                    if size <= 0 or value < 0:
+                        errors.append(f"{where}: Bar {bar.get('label', '')!r} "
+                                      "needs Size>0 and Value>=0")
+                except ValueError:
+                    errors.append(f"{where}: Bar {bar.get('label', '')!r} has "
+                                  "non-numeric Size/Value")
 
     # Narrative + data integrity
     warnings.extend(validate_narrative(meta, slides))

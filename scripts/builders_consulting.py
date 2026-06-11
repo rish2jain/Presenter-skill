@@ -147,10 +147,12 @@ def build_matrix_slide(prs, p, pal, ctx):
     sizes = []
     for it in items:
         try:
-            sizes.append(float(it["size"]))
+            s = float(it["size"])
+            sizes.append(s if s > 0 else None)
         except (KeyError, ValueError):
             sizes.append(None)
     smax = max((s for s in sizes if s), default=0)
+    from helpers import set_fill_alpha
     for item, s in zip(items, sizes):
         try:
             fx, fy = float(item.get("x", 0.5)), float(item.get("y", 0.5))
@@ -159,9 +161,10 @@ def build_matrix_slide(prs, p, pal, ctx):
         cx = L + fx * W
         cy = T + (1 - fy) * H
         d = 0.18 if not (s and smax) else 0.24 + 0.66 * (s / smax) ** 0.5
+        cx = max(L + d / 2, min(L + W - d / 2, cx))
+        cy = max(T + d / 2, min(T + H - d / 2, cy))
         dot = B.add_circle(slide, cx - d / 2, cy - d / 2, d, pal["accent1"])
         if s and smax:
-            from helpers import set_fill_alpha
             set_fill_alpha(dot, 80)  # bubbles overlap; keep grid visible
         off = d / 2 + 0.06
         if cx + off + 2.2 > L + W:  # label would cross the right border
@@ -662,14 +665,19 @@ def build_bar_mekko_slide(prs, p, pal, ctx):
     rows = []
     for b in p.get("bars", []):
         try:
-            rows.append((b.get("label", "?"), float(b["size"]), float(b["value"])))
+            size, value = float(b["size"]), float(b["value"])
         except (KeyError, ValueError):
             warn(f"bar-mekko row needs numeric Size and Value: {b}")
+            continue
+        if size <= 0 or value < 0:
+            warn(f"bar-mekko row needs Size>0 and Value>=0: {b}")
+            continue
+        rows.append((b.get("label", "?"), size, value))
     if len(rows) < 2:
         warn("bar-mekko has <2 valid bars; rendering bullet-list")
         return B.build_bullet_slide(prs, p, pal, ctx)
 
-    L, bottom, total_w, top = 0.7, 6.15, 11.9, 1.95
+    L, bottom, total_w, top = 0.7, 6.15, 11.9, 2.25
     gap = 0.08
     total_size = sum(s for _, s, _ in rows) or 1
     vmax = max(v for _, _, v in rows) or 1

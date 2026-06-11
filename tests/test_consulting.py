@@ -253,3 +253,35 @@ def test_matrix_bubble_sizes_scale():
     assert len(ovals) == 2
     big, small = sorted((o.width.inches for o in ovals), reverse=True)
     assert big > small * 1.8, (big, small)  # sqrt(40/5) ≈ 2.8x diameter
+
+
+def test_matrix_negative_size_falls_back_to_fixed_dot():
+    from builders_consulting import build_matrix_slide
+    md = BUBBLE_MD.replace('Size="5"', 'Size="-5"')
+    _, slides = parse_outline(md)
+    slide = build_matrix_slide(_prs(), slides[0], PAL, CTX)  # must not raise
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    ovals = [s for s in slide.shapes
+             if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE and s.width == s.height]
+    assert len(ovals) == 2
+
+
+def test_bar_mekko_rejects_negative_values_in_validate():
+    md = BAR_MEKKO_MD.replace('Size="30"', 'Size="-30"')
+    _, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX)
+    assert any("Size>0" in e for e in errors), errors
+
+
+def test_matrix_bubble_clamped_inside_plot():
+    from builders_consulting import build_matrix_slide
+    md = BUBBLE_MD.replace('X="0.8" Y="0.8"', 'X="1.0" Y="1.0"')
+    _, slides = parse_outline(md)
+    slide = build_matrix_slide(_prs(), slides[0], PAL, CTX)
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    EMU_IN = 914400
+    plot_right = (2.0 + 9.6) * EMU_IN  # L + W from the builder
+    for s in slide.shapes:
+        if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE and s.width == s.height \
+                and s.width / EMU_IN > 0.1:
+            assert s.left + s.width <= plot_right + 100, "bubble escapes plot"
