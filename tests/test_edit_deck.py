@@ -82,3 +82,23 @@ def test_inventory_and_replace_roundtrip(tmp_path):
     runs = prs2.slides[0].shapes[0].text_frame.paragraphs[0].runs
     assert runs[0].text == "New headline"
     assert runs[0].font.bold  # formatting preserved
+
+
+def test_replace_out_of_range_run_raises(tmp_path):
+    import json
+    import pytest
+    from pptx import Presentation
+    from pptx.util import Inches
+    import edit_deck
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    tb = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+    tb.text_frame.paragraphs[0].add_run().text = "x"
+    src = tmp_path / "deck.pptx"
+    prs.save(str(src))
+    work = tmp_path / "unpacked"
+    edit_deck.unpack(str(src), str(work))
+    edits = tmp_path / "edits.json"
+    edits.write_text(json.dumps([{"slide": 1, "run": 999, "text": "y"}]))
+    with pytest.raises(SystemExit, match="out of range"):
+        edit_deck.replace_runs(str(work), str(edits))

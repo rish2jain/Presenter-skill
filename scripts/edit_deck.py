@@ -311,6 +311,9 @@ def inventory(src_dir):
 
     'run' is the index of the <a:t> within its slide — the stable address
     replace_runs() uses. Returns the list (the CLI prints it as JSON).
+
+    NOTE: 'slide' is the slideN.xml file number, not the deck position —
+    after a reorder these differ; run the 'list' subcommand to correlate.
     """
     out = []
     for f in _slide_xml_files(src_dir):
@@ -322,7 +325,14 @@ def inventory(src_dir):
 
 
 def replace_runs(src_dir, edits_json):
-    """Apply [{slide, run, text}] edits; formatting (rPr) is untouched."""
+    """Apply [{slide, run, text}] edits; formatting (rPr) is untouched.
+
+    NOTE: 'slide' is the slideN.xml file number, not the deck position —
+    after a reorder these differ; run the 'list' subcommand to correlate.
+
+    On error, slides processed before the failure are already written;
+    re-unpack from the original .pptx to reset.
+    """
     import json
     edits = json.loads(Path(edits_json).read_text(encoding="utf-8"))
     by_slide = {}
@@ -356,7 +366,7 @@ def main():
     p_ro = sub.add_parser("reorder"); p_ro.add_argument("dir"); p_ro.add_argument(
         "order", help="Comma-separated positions, e.g. 3,1,2,4")
     p_cl = sub.add_parser("clean"); p_cl.add_argument("dir")
-    p_inv = sub.add_parser("inventory"); p_inv.add_argument("dir")
+    p_inv = sub.add_parser("inventory", help="JSON dump of every text run (addresses are slideN.xml file numbers)"); p_inv.add_argument("dir")
     p_rep = sub.add_parser("replace"); p_rep.add_argument("dir")
     p_rep.add_argument("edits", help="JSON: [{slide, run, text}, ...]")
     args = parser.parse_args()

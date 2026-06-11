@@ -289,7 +289,7 @@ def dump_text(pptx_path):
 
 
 NUM_TOKEN_RX = re.compile(
-    r"[$€£]?\d[\d,.]*\s*(?:%|bn|B|M|k|x|pp|bps)?|FY\d{2,4}|Q[1-4]\s?\d{2,4}",
+    r"[$€£]?\d[\d,.]*(?:%|bps|bn|B|M|k|x|pp)?|FY\d{2,4}|Q[1-4]\s?\d{2,4}",
     re.I)
 
 

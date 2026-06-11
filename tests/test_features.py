@@ -166,3 +166,9 @@ def test_dump_numbers_extracts_per_slide(capsys, tmp_path):
     dump_numbers(p)
     out = capsys.readouterr().out
     assert "Slide 1" in out and "12%" in out and "$4.2B" in out and "FY25" in out
+
+
+def test_num_token_rx_suffix_handling():
+    from qa_check import NUM_TOKEN_RX
+    assert NUM_TOKEN_RX.findall("spread tightened 200bps") == ["200bps"]
+    assert NUM_TOKEN_RX.findall("3 key levers") == ["3"]
