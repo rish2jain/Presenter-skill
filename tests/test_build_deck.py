@@ -294,3 +294,9 @@ def test_unknown_heading_attr_warns(capsys):
     from build_deck import parse_outline
     parse_outline("## Slide 1: T {laoyut=waterfall}\n- b\n")
     assert "unknown heading attribute" in capsys.readouterr().err
+
+
+def test_quoted_heading_attr_warns(capsys):
+    from build_deck import parse_outline
+    parse_outline('## Slide 1: T {layout="waterfall"}\n- b\n')
+    assert "did not parse" in capsys.readouterr().err

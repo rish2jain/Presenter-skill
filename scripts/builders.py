@@ -231,8 +231,9 @@ def build_ghost_slide(prs, p, pal, ctx):
     label = f"[ {p.get('layout', 'bullet-list')} ]"
     if kind:
         label += f"   planned visual — {kind}: {value}"
-    elif p.get("data"):
-        label += "   planned exhibit from Data block"
+    elif any(p.get(k) for k in ("data", "bars", "matrix_items", "tiles",
+                                "milestones", "table_rows", "steps")):
+        label += "   planned exhibit from structured rows"
     box = add_rect(slide, 0.7, 1.9, 11.9, 4.6, pal["surface"],
                    line_hex=pal["text_muted"], line_pt=1.0)
     set_fill_alpha(box, 40)

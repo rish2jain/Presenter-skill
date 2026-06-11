@@ -41,7 +41,7 @@ python scripts/profile_template.py template.pptx
 
 ## Automatic mapping in build_deck.py
 
-`build_deck.py --template T.pptx` maps layouts by **placeholder-type signature** (TITLE+BODY, CENTER_TITLE, PICTURE, etc.), with layout **name hints as a tiebreaker only** — so renamed or non-English templates still work when their placeholders match. Covered layouts: `title`, `closing`, `section-divider`, `bullet-list`, and `exec-summary`. Layouts with no template equivalent (charts, cards, timelines, stats, comparison, tables) fall back to styled builders on the template's most-blank layout — they inherit slide dimensions but not master styling.
+`build_deck.py --template T.pptx` maps layouts by **placeholder-type signature** (TITLE+BODY, CENTER_TITLE, PICTURE, etc.), with layout **name hints as a tiebreaker only** — so renamed or non-English templates still work when their placeholders match. Covered layouts: `title`, `closing`, `section-divider`, `bullet-list`, and `exec-summary`. Layouts with no template equivalent (charts, cards, timelines, stats, comparison, tables) fall back to styled builders on the template's most-blank layout — they inherit slide dimensions but not master styling. `--ghost` does not apply to slides matched from a user template — template placeholder slides render real content; ghost only replaces the styled builders.
 
 `profile_template.py --generate-config` writes advisory JSON (layout inventory + theme colors) for the agent to read when planning slides; it is not auto-loaded by `build_deck.py`.
 

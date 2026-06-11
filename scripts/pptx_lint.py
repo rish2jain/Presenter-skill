@@ -222,7 +222,12 @@ def main():
     parser.add_argument("pptx")
     parser.add_argument("--palette", default=None,
                         help="Enforce this palette's colors as a whitelist")
+    parser.add_argument("--assets-dir", default="assets",
+                        help="Root assets dir; custom palettes load from "
+                             "<assets-dir>/palettes/")
     args = parser.parse_args()
+    from palettes import load_custom_palettes
+    load_custom_palettes(Path(args.assets_dir) / "palettes")
     prs = Presentation(args.pptx)
     issues = lint_deck(prs, args.palette)
     for e in issues["error"]:

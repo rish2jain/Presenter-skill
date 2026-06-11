@@ -127,8 +127,13 @@ def parse_outline(md_text):
                 heading = m.group(1).strip()
                 m_attr = re.search(r"\{([^{}]*)\}\s*$", heading)
                 if m_attr:
-                    for k, v in re.findall(r"(\w[\w-]*)=([\w./#-]+)",
-                                           m_attr.group(1)):
+                    pairs = re.findall(r"(\w[\w-]*)=([\w./#-]+)",
+                                       m_attr.group(1))
+                    if not pairs:
+                        warn(f"line {lineno}: heading attributes "
+                             f"{m_attr.group(0)!r} did not parse — values "
+                             "must be unquoted (layout=waterfall)")
+                    for k, v in pairs:
                         if k == "layout":
                             current["layout"] = v.lower()
                         elif k == "palette":

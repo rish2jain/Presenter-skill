@@ -140,3 +140,23 @@ def test_page_gap_over_unnumbered_slide_passes():
     _tb(_blank(prs), "4", 11.9, 7.08)
     issues = lint_deck(prs)
     assert not any("sequence" in e for e in issues["error"]), issues
+
+
+def test_lint_with_custom_palette(tmp_path):
+    import json
+    from palettes import PALETTES, load_custom_palettes
+    pdir = tmp_path / "palettes"
+    pdir.mkdir()
+    (pdir / "lintbrand.json").write_text(json.dumps({
+        "bg": "101820", "bg_deep": "0A0F14", "surface": "1E2A33",
+        "accent1": "FEE715", "accent2": "8DA9C4", "accent3": "5C946E",
+        "text": "F4F4F4", "text_muted": "9DB2BF", "dark": True}))
+    load_custom_palettes(pdir)
+    try:
+        prs = _prs()
+        _tb(_blank(prs), "branded", 1.0, 1.0, color="FEE715")
+        issues = lint_deck(prs, palette_key="lintbrand")
+        assert not any("unknown palette" in w for w in issues["warn"]), issues
+        assert not any("FEE715" in e for e in issues["error"]), issues
+    finally:
+        PALETTES.pop("lintbrand", None)

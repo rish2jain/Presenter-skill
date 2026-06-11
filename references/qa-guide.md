@@ -43,6 +43,8 @@ Complements `qa_check.py` with deck-wide checks that per-slide inspection misses
 - **Font inventory:** flags decks with more distinct fonts than the threshold (inconsistent branding).
 - **Palette whitelist:** with `--palette`, any run or fill color outside the palette (plus known extras) is reported as an error.
 
+For custom-brand decks pass `--assets-dir` so the palette whitelist resolves: `python3 scripts/pptx_lint.py deck.pptx --palette <name> --assets-dir <assets>`. Note: slides using per-slide `{palette=...}` overrides will flag as off-palette against the deck palette — lint against the dominant palette and review those slides by eye.
+
 Run this after `qa_check.py`; fix jiggle and off-palette colors in the outline before visual inspection.
 
 ---
