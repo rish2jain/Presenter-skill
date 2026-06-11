@@ -143,20 +143,33 @@ def build_matrix_slide(prs, p, pal, ctx):
             B.add_tb(slide, p[key], qx + 0.15, qy + 0.1, W / 2 - 0.3, 0.4,
                      size=12, bold=True, color=pal["text_muted"],
                      font=pal["font_body"])
-    for item in p.get("matrix_items", [])[:12]:
+    items = p.get("matrix_items", [])[:12]
+    sizes = []
+    for it in items:
+        try:
+            sizes.append(float(it["size"]))
+        except (KeyError, ValueError):
+            sizes.append(None)
+    smax = max((s for s in sizes if s), default=0)
+    for item, s in zip(items, sizes):
         try:
             fx, fy = float(item.get("x", 0.5)), float(item.get("y", 0.5))
         except ValueError:
             continue
         cx = L + fx * W
         cy = T + (1 - fy) * H
-        B.add_circle(slide, cx - 0.09, cy - 0.09, 0.18, pal["accent1"])
-        if cx + 0.14 + 2.2 > L + W:  # label would cross the right border
-            B.add_tb(slide, item.get("name", ""), cx - 2.34, cy - 0.16, 2.2,
-                     0.35, size=11, color=pal["text"],
+        d = 0.18 if not (s and smax) else 0.24 + 0.66 * (s / smax) ** 0.5
+        dot = B.add_circle(slide, cx - d / 2, cy - d / 2, d, pal["accent1"])
+        if s and smax:
+            from helpers import set_fill_alpha
+            set_fill_alpha(dot, 80)  # bubbles overlap; keep grid visible
+        off = d / 2 + 0.06
+        if cx + off + 2.2 > L + W:  # label would cross the right border
+            B.add_tb(slide, item.get("name", ""), cx - off - 2.2, cy - 0.16,
+                     2.2, 0.35, size=11, color=pal["text"],
                      align=PP_ALIGN.RIGHT, font=pal["font_body"])
         else:
-            B.add_tb(slide, item.get("name", ""), cx + 0.14, cy - 0.16, 2.2,
+            B.add_tb(slide, item.get("name", ""), cx + off, cy - 0.16, 2.2,
                      0.35, size=11, color=pal["text"], font=pal["font_body"])
     return slide
 

@@ -230,3 +230,26 @@ def test_bar_mekko_registered_and_validated():
     _, slides = parse_outline("## Slide 1: Bad mekko\n**Layout:** bar-mekko\n")
     errors, _ = validate(slides, CTX)
     assert any("bar-mekko" in e for e in errors)
+
+
+BUBBLE_MD = """## Slide 1: Two bets dominate the portfolio by revenue at stake
+**Layout:** matrix-2x2
+- X-axis: Relative share
+- Y-axis: Market growth
+- Item: Name="Stars" X="0.8" Y="0.8" Size="40"
+- Item: Name="Dogs" X="0.2" Y="0.2" Size="5"
+- Notes: Bubble area = revenue.
+"""
+
+
+def test_matrix_bubble_sizes_scale():
+    from builders_consulting import build_matrix_slide
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    _, slides = parse_outline(BUBBLE_MD)
+    slide = build_matrix_slide(_prs(), slides[0], PAL, CTX)
+    ovals = [s for s in slide.shapes
+             if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+             and s.width == s.height and s.width.inches > 0.1]
+    assert len(ovals) == 2
+    big, small = sorted((o.width.inches for o in ovals), reverse=True)
+    assert big > small * 1.8, (big, small)  # sqrt(40/5) ≈ 2.8x diameter
