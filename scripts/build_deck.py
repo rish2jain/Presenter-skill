@@ -240,18 +240,21 @@ def _agenda_slide(sections, current=None):
 def apply_auto_agenda(meta, slides):
     """**Auto-Agenda:** on  -> overview agenda after the title slide.
                        track -> + current-highlighted agenda after each divider.
-    Sections come from section-divider headings; no dividers -> no-op."""
+    Sections come from section-divider headings (appendix dividers excluded);
+    no dividers -> no-op.  The overview is only inserted when slide 1 is a
+    title slide."""
     mode = meta.get("auto_agenda", "").lower()
     if mode not in ("on", "track"):
         return slides
     sections = [s.get("heading") or s.get("title", "")
-                for s in slides if s.get("layout") == "section-divider"]
+                for s in slides
+                if s.get("layout") == "section-divider" and not s.get("_appendix")]
     if not sections:
         return slides
     out = []
     for i, s in enumerate(slides):
         out.append(s)
-        if i == 0 and not s.get("_appendix"):
+        if i == 0 and s.get("layout") == "title" and not s.get("_appendix"):
             out.append(_agenda_slide(sections))
         if mode == "track" and s.get("layout") == "section-divider" \
                 and not s.get("_appendix"):

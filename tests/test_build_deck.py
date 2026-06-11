@@ -220,3 +220,28 @@ def test_stamp_appears_on_every_slide(tmp_path):
         texts = [sh.text_frame.text for sh in slide.shapes
                  if getattr(sh, "has_text_frame", False)]
         assert "DRAFT" in texts, texts
+
+
+def test_auto_agenda_excludes_appendix_sections():
+    from build_deck import parse_outline, apply_auto_agenda
+    md = TRACKED_MD + """
+## Appendix
+
+## Slide 6: Backup detail
+**Layout:** section-divider
+- Subtitle: Backup
+"""
+    meta, slides = parse_outline(md)
+    out = apply_auto_agenda(meta, slides)
+    overview = next(s for s in out if s["layout"] == "agenda")
+    assert overview["bullets"] == ["Diagnosis", "Plan"], overview["bullets"]
+
+
+def test_auto_agenda_divider_first_gets_no_overview():
+    from build_deck import parse_outline, apply_auto_agenda
+    md = TRACKED_MD.split("## Slide 2", 1)[1]
+    md = "**Auto-Agenda:** track\n\n## Slide 2" + md
+    meta, slides = parse_outline(md)
+    out = apply_auto_agenda(meta, slides)
+    overviews = [s for s in out if s["layout"] == "agenda" and not s.get("current")]
+    assert not overviews, [s.get("heading") for s in out]

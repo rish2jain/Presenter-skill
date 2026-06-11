@@ -13,7 +13,8 @@ from pptx.util import Inches, Pt
 
 from charts import add_native_chart
 from helpers import (add_picture_cover, add_soft_shadow, parse_visual,
-                     resolve_image_path, set_slide_bg_gradient, warn)
+                     resolve_image_path, set_fill_alpha, set_slide_bg_gradient,
+                     warn)
 from helpers import add_circle as _add_circle
 from helpers import add_overlay as _add_overlay
 from helpers import add_picture_contain as _add_picture_contain
@@ -234,7 +235,6 @@ def build_ghost_slide(prs, p, pal, ctx):
         label += "   planned exhibit from Data block"
     box = add_rect(slide, 0.7, 1.9, 11.9, 4.6, pal["surface"],
                    line_hex=pal["text_muted"], line_pt=1.0)
-    from helpers import set_fill_alpha
     set_fill_alpha(box, 40)
     add_tb(slide, label, 0.9, 2.05, 11.5, 0.4, size=14, bold=True,
            color=pal["text_muted"], font=pal["font_label"])
