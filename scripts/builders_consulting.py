@@ -640,3 +640,43 @@ def build_gantt_slide(prs, p, pal, ctx):
 
 LAYOUTS["mekko"] = build_mekko_slide
 LAYOUTS["gantt"] = build_gantt_slide
+
+
+# ── bar mekko (profit pool: width = size, height = value) ───────────────────
+def build_bar_mekko_slide(prs, p, pal, ctx):
+    slide = B._blank_slide(prs, pal, pal["bg"])
+    B._heading(slide, p, pal)
+    rows = []
+    for b in p.get("bars", []):
+        try:
+            rows.append((b.get("label", "?"), float(b["size"]), float(b["value"])))
+        except (KeyError, ValueError):
+            warn(f"bar-mekko row needs numeric Size and Value: {b}")
+    if len(rows) < 2:
+        warn("bar-mekko has <2 valid bars; rendering bullet-list")
+        return B.build_bullet_slide(prs, p, pal, ctx)
+
+    L, bottom, total_w, top = 0.7, 6.15, 11.9, 1.95
+    gap = 0.08
+    total_size = sum(s for _, s, _ in rows) or 1
+    vmax = max(v for _, _, v in rows) or 1
+    scale = (bottom - top) / vmax
+    accents = [pal["accent1"], pal["accent2"], pal["accent3"]]
+
+    x = L
+    for i, (label, size, value) in enumerate(rows):
+        w = (total_w - gap * (len(rows) - 1)) * size / total_size
+        h = max(value * scale, 0.04)
+        B.add_rect(slide, x, bottom - h, w, h, accents[i % len(accents)])
+        B.add_tb(slide, _fmt_num(value), x - 0.1, bottom - h - 0.34, w + 0.2,
+                 0.3, size=12, bold=True, color=pal["text"],
+                 align=PP_ALIGN.CENTER, font=pal["font_body"])
+        B.add_tb(slide, f"{label}\n{_fmt_num(size)}", x - 0.1, bottom + 0.10,
+                 w + 0.2, 0.75, size=11, color=pal["text_muted"],
+                 align=PP_ALIGN.CENTER, font=pal["font_label"])
+        x += w + gap
+    B.add_rect(slide, L, bottom, total_w, 0.02, pal["surface"])
+    return slide
+
+
+LAYOUTS["bar-mekko"] = build_bar_mekko_slide

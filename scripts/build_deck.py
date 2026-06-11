@@ -229,7 +229,7 @@ ACTION_TITLE_LAYOUTS = {
     "bullet-list", "two-column-split", "exec-summary", "exec-summary-scqa",
     "comparison", "table", "stat-callout", "timeline", "waterfall",
     "matrix-2x2", "chart-callout", "dashboard", "funnel", "harvey-scorecard",
-    "process-flow", "mekko", "gantt",
+    "process-flow", "mekko", "gantt", "bar-mekko",
 }
 
 
@@ -382,6 +382,12 @@ def validate(slides, ctx, meta=None):
                 except ValueError:
                     errors.append(f"{where}: Bar {bar.get('label', '')!r} has "
                                   "non-numeric Start/End")
+        if layout == "bar-mekko":
+            ok_bars = [b for b in p.get("bars", [])
+                       if "size" in b and "value" in b]
+            if len(ok_bars) < 2:
+                errors.append(f"{where}: bar-mekko needs 2+ '- Bar: "
+                              'Label=".." Size=".." Value=".."\' rows')
 
     # Narrative + data integrity
     warnings.extend(validate_narrative(meta, slides))

@@ -201,3 +201,32 @@ def test_action_title_warning_fires_on_topic_labels():
     meta, slides = parse_outline(md)
     _, warnings = validate(slides, CTX, meta)
     assert any("action title" in w for w in warnings)
+
+
+BAR_MEKKO_MD = """## Slide 1: EMEA is the margin outlier despite its size
+**Layout:** bar-mekko
+- Bar: Label="Americas" Size="55" Value="14"
+- Bar: Label="EMEA" Size="30" Value="6"
+- Bar: Label="APAC" Size="15" Value="11"
+- Notes: Width = revenue share, height = EBITDA margin.
+"""
+
+
+def test_bar_mekko_widths_proportional_to_size():
+    from builders_consulting import build_bar_mekko_slide
+    _, slides = parse_outline(BAR_MEKKO_MD)
+    slide = build_bar_mekko_slide(_prs(), slides[0], PAL, CTX)
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    rects = [s for s in slide.shapes
+             if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE and s.height.inches > 0.5]
+    assert len(rects) == 3
+    widths = sorted((r.width for r in rects), reverse=True)
+    assert widths[0] > widths[1] > widths[2]  # 55 > 30 > 15
+
+
+def test_bar_mekko_registered_and_validated():
+    import builders
+    assert "bar-mekko" in builders.LAYOUT_MAP
+    _, slides = parse_outline("## Slide 1: Bad mekko\n**Layout:** bar-mekko\n")
+    errors, _ = validate(slides, CTX)
+    assert any("bar-mekko" in e for e in errors)
