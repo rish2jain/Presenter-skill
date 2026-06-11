@@ -86,7 +86,7 @@ META_KEYS = {"Palette": "palette", "Footer": "footer",
               "Page-Numbers": "page_numbers", "Size": "size",
               "Density": "density", "Purpose": "purpose",
               "Variant": "variant", "Motif": "motif", "Takeaway": "takeaway",
-              "Exhibits": "exhibits"}
+              "Exhibits": "exhibits", "Auto-Agenda": "auto_agenda"}
 
 
 def parse_outline(md_text):
@@ -221,6 +221,42 @@ def parse_outline(md_text):
         if not slide.get("layout"):
             slide["layout"] = auto_layout(slide)
     return meta, slides
+
+
+def _agenda_slide(sections, current=None):
+    slide = {"bullets": list(sections), "stats": [], "cards": [], "items": [],
+             "data": [], "table_rows": [], "steps": [], "tiles": [],
+             "matrix_items": [], "bars": [], "milestones": [],
+             "left_bullets": [], "right_bullets": [],
+             "layout": "agenda", "heading": "Agenda",
+             "notes": "Auto-generated agenda tracker.", "_auto": True}
+    if current:
+        slide["current"] = current
+        slide["heading"] = "Where we are"
+    return slide
+
+
+def apply_auto_agenda(meta, slides):
+    """**Auto-Agenda:** on  -> overview agenda after the title slide.
+                       track -> + current-highlighted agenda after each divider.
+    Sections come from section-divider headings; no dividers -> no-op."""
+    mode = meta.get("auto_agenda", "").lower()
+    if mode not in ("on", "track"):
+        return slides
+    sections = [s.get("heading") or s.get("title", "")
+                for s in slides if s.get("layout") == "section-divider"]
+    if not sections:
+        return slides
+    out = []
+    for i, s in enumerate(slides):
+        out.append(s)
+        if i == 0 and not s.get("_appendix"):
+            out.append(_agenda_slide(sections))
+        if mode == "track" and s.get("layout") == "section-divider" \
+                and not s.get("_appendix"):
+            out.append(_agenda_slide(
+                sections, current=s.get("heading") or s.get("title", "")))
+    return out
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
@@ -542,6 +578,7 @@ def build(outline_path, output_path, palette_key=None,
         "template_path": template_path,
     }
     meta, slides_data = parse_outline(outline_path.read_text(encoding="utf-8"))
+    slides_data = apply_auto_agenda(meta, slides_data)
 
     import builders
     variant_key = variant or meta.get("variant", "")

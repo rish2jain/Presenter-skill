@@ -122,3 +122,56 @@ def test_golden_build_and_qa(tmp_path):
 
     issues = check_deck(out)
     assert not issues["error"]
+
+
+TRACKED_MD = """**Auto-Agenda:** track
+
+## Slide 1: Acme FY27 Strategy
+**Layout:** title
+- Title: Acme FY27 Strategy
+- Subtitle: Board readout
+
+## Slide 2: Diagnosis
+**Layout:** section-divider
+- Subtitle: Where we are
+
+## Slide 3: Costs have outgrown revenue for three years
+- Cost CAGR 12% vs revenue 4%
+- Notes: Set up the problem.
+
+## Slide 4: Plan
+**Layout:** section-divider
+- Subtitle: What we will do
+
+## Slide 5: Three levers close the gap by FY27
+- Tiering, exit, discount discipline
+- Notes: The plan.
+"""
+
+
+def test_auto_agenda_track_inserts_tracker_slides():
+    from build_deck import parse_outline, apply_auto_agenda
+    meta, slides = parse_outline(TRACKED_MD)
+    out = apply_auto_agenda(meta, slides)
+    layouts = [s["layout"] for s in out]
+    # title, agenda, divider, tracker, content, divider, tracker, content
+    assert layouts == ["title", "agenda", "section-divider", "agenda",
+                       "bullet-list", "section-divider", "agenda",
+                       "bullet-list"], layouts
+    trackers = [s for s in out if s["layout"] == "agenda" and s.get("current")]
+    assert [t["current"] for t in trackers] == ["Diagnosis", "Plan"]
+    assert out[1]["bullets"] == ["Diagnosis", "Plan"]
+
+
+def test_auto_agenda_on_inserts_only_overview():
+    from build_deck import parse_outline, apply_auto_agenda
+    meta, slides = parse_outline(TRACKED_MD.replace("track", "on"))
+    out = apply_auto_agenda(meta, slides)
+    agendas = [s for s in out if s["layout"] == "agenda"]
+    assert len(agendas) == 1 and not agendas[0].get("current")
+
+
+def test_auto_agenda_off_is_identity():
+    from build_deck import parse_outline, apply_auto_agenda
+    meta, slides = parse_outline(TRACKED_MD.replace("**Auto-Agenda:** track\n\n", ""))
+    assert apply_auto_agenda(meta, slides) == slides
