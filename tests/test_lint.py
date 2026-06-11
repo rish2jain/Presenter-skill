@@ -125,3 +125,18 @@ def test_jiggle_no_false_positive_when_all_aligned():
         _tb(_blank(prs), str(i), 11.9, 7.08)
     issues = lint_deck(prs)
     assert not any("jiggle" in e for e in issues["error"]), issues
+
+
+def test_page_gap_over_unnumbered_slide_passes():
+    """A gap in page numbers spanning an unnumbered divider slide must not be flagged.
+
+    Slides 1,2,4 carry numbers; slide 3 is an unnumbered layout.
+    Number delta (4-2=2) equals slide-position delta (4-2=2), so no error.
+    """
+    prs = _prs()
+    _tb(_blank(prs), "1", 11.9, 7.08)
+    _tb(_blank(prs), "2", 11.9, 7.08)
+    _blank(prs)                      # divider: no page number
+    _tb(_blank(prs), "4", 11.9, 7.08)
+    issues = lint_deck(prs)
+    assert not any("sequence" in e for e in issues["error"]), issues

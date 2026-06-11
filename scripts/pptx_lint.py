@@ -83,7 +83,16 @@ def check_jiggle(prs, issues):
 
 
 def check_page_sequence(prs, issues):
-    """Plain-digit footer-zone page numbers must be strictly consecutive."""
+    """Plain-digit footer-zone page numbers must track slide positions consistently.
+
+    The invariant is: for any two consecutive numbered slides (n1, n2) with
+    page numbers (v1, v2), the number delta must equal the slide-position delta:
+        v2 - v1  ==  n2 - n1
+
+    This allows gaps that span unnumbered layouts (title, section-divider, etc.)
+    while still catching duplicates (v2 == v1 on different slides) and true
+    misnumbering (number delta differs from slide delta).
+    """
     sh_in = prs.slide_height / EMU_IN
     pages = []  # (slide_no, value)
     for n, _slide, shape in _iter_text_shapes(prs):
@@ -94,10 +103,10 @@ def check_page_sequence(prs, issues):
         if text.isdigit():
             pages.append((n, int(text)))
     for (n1, v1), (n2, v2) in zip(pages, pages[1:]):
-        if v2 != v1 + 1:
+        if v2 - v1 != n2 - n1:
             issues["error"].append(
                 f"Slide {n2}: page-number sequence broken "
-                f"({v1} on slide {n1}, then {v2})")
+                f"({v1} on slide {n1}, then {v2} {n2 - n1} slide(s) later)")
 
 
 def collect_inventory(prs):
