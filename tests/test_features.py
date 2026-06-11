@@ -102,5 +102,4 @@ def test_thumbnail_grid_is_labeled(tmp_path):
     create_thumbnail_grid(imgs, out, cols=2)
     grid = Image.open(out)
     # badge: each cell's top-left corner carries an opaque label strip
-    corner = grid.getpixel((4, 4))
-    assert corner != (40, 40, 60), "no label badge drawn on cell 1"
+    assert grid.getpixel((4, 4)) == (0, 0, 0), "badge background not black at (4,4)"

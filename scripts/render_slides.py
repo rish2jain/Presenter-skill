@@ -24,13 +24,19 @@ def _pptx_to_pdf(pptx_path, tmp):
     no cold LibreOffice launch per call — falling back to soffice."""
     if shutil.which("unoconvert"):
         pdf = Path(tmp) / (Path(pptx_path).stem + ".pdf")
-        result = subprocess.run(
-            ["unoconvert", "--convert-to", "pdf", str(pptx_path), str(pdf)],
-            capture_output=True, text=True, timeout=180)
-        if result.returncode == 0 and pdf.is_file():
-            return pdf
-        print(f"[WARN] unoconvert failed ({result.stderr.strip()[:120]}) — "
-              "falling back to soffice", file=sys.stderr)
+        try:
+            result = subprocess.run(
+                ["unoconvert", "--convert-to", "pdf", str(pptx_path), str(pdf)],
+                capture_output=True, text=True, timeout=60)
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            print(f"[WARN] unoconvert unavailable ({exc.__class__.__name__}) — "
+                  "is the unoserver daemon running? Falling back to soffice",
+                  file=sys.stderr)
+        else:
+            if result.returncode == 0 and pdf.is_file():
+                return pdf
+            print(f"[WARN] unoconvert failed ({result.stderr.strip()[:120]}) — "
+                  "falling back to soffice", file=sys.stderr)
     result = subprocess.run(
         ["soffice", "--headless", "--convert-to", "pdf",
          "--outdir", tmp, str(pptx_path)],
@@ -125,7 +131,7 @@ def render_fallback(pptx_path, out_dir, slide_filter=None):
 
 def create_thumbnail_grid(imgs, out_path, cols=4):
     """Stitch all slide thumbnails into a single grid image."""
-    from PIL import Image
+    from PIL import Image, ImageDraw, ImageFont
 
     if not imgs:
         print("No images to stitch.", file=sys.stderr)
@@ -136,7 +142,6 @@ def create_thumbnail_grid(imgs, out_path, cols=4):
     rows = (len(imgs) + cols - 1) // cols
     grid = Image.new("RGB", (cols * tw + (cols - 1) * 4, rows * th + (rows - 1) * 4), (30, 30, 40))
 
-    from PIL import ImageDraw, ImageFont
     try:
         font = ImageFont.load_default(size=max(14, th // 12))
     except TypeError:  # Pillow < 10 has no size kwarg
@@ -150,7 +155,8 @@ def create_thumbnail_grid(imgs, out_path, cols=4):
         bbox = draw.textbbox((0, 0), label, font=font)
         bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
         draw.rectangle((0, 0, bw + 2 * pad, bh + 2 * pad), fill=(0, 0, 0))
-        draw.text((pad, pad), label, fill=(255, 255, 255), font=font)
+        draw.text((pad - bbox[0], pad - bbox[1]), label,
+                  fill=(255, 255, 255), font=font)
         row, col = divmod(idx, cols)
         grid.paste(img, (col * (tw + 4), row * (th + 4)))
 
