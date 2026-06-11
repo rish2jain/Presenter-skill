@@ -177,6 +177,28 @@ def test_auto_agenda_off_is_identity():
     assert apply_auto_agenda(meta, slides) == slides
 
 
+def test_ghost_mode_renders_layout_labels(tmp_path):
+    from build_deck import build
+    from pptx import Presentation
+    md = tmp_path / "o.md"
+    md.write_text("""## Slide 1: Three levers bridge run-rate down to target
+**Layout:** waterfall
+**Data:**
+- FY25: 46
+- Tiering: -8
+- FY27: total
+- Notes: n.
+""")
+    out = tmp_path / "g.pptx"
+    assert build(str(md), str(out), ghost=True)
+    prs = Presentation(str(out))
+    texts = " ".join(sh.text_frame.text for sh in prs.slides[0].shapes
+                     if getattr(sh, "has_text_frame", False))
+    assert "waterfall" in texts            # layout label shown
+    assert "Three levers" in texts          # real action title kept
+    assert "46" not in texts                # data NOT rendered
+
+
 def test_stamp_appears_on_every_slide(tmp_path):
     from build_deck import build
     from pptx import Presentation

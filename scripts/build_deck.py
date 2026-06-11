@@ -583,7 +583,7 @@ def _add_stamp(slide, pal, text):
 
 def build(outline_path, output_path, palette_key=None,
           template_path=None, assets_dir=None, check_only=False, size=None,
-          density=None, variant=None):
+          density=None, variant=None, ghost=False):
     outline_path = Path(outline_path)
     ctx = {
         "outline_dir": outline_path.parent,
@@ -652,7 +652,10 @@ def build(outline_path, output_path, palette_key=None,
                 slide = build_template_slide(prs, p, layout_name, ctx, template_config)
                 templated = slide is not None
             if slide is None:
-                slide = LAYOUT_MAP[layout_name](prs, p, pal, ctx)
+                if ghost and layout_name not in builders.GHOST_KEEP_REAL:
+                    slide = builders.build_ghost_slide(prs, p, pal, ctx)
+                else:
+                    slide = LAYOUT_MAP[layout_name](prs, p, pal, ctx)
             if p.get("notes"):
                 add_speaker_notes(slide, p["notes"])
             if not templated and layout_name not in NO_FOOTER_LAYOUTS:
@@ -701,6 +704,8 @@ if __name__ == "__main__":
     parser.add_argument("--variant", default=None,
                         choices=("a", "b", "c", "consulting"),
                         help="Palette+density preset (a=default, b=aurora/comfortable)")
+    parser.add_argument("--ghost", action="store_true",
+                        help="Build a skeleton deck: real titles, placeholder exhibits (storyline alignment)")
     parser.add_argument("--check", action="store_true",
                         help="Validate the outline only; do not build")
     parser.add_argument("--titles", action="store_true",
@@ -718,5 +723,5 @@ if __name__ == "__main__":
 
     ok = build(args.outline, args.output, args.palette,
                args.template, args.assets_dir, args.check, args.size,
-               args.density, args.variant)
+               args.density, args.variant, ghost=args.ghost)
     sys.exit(0 if ok else 1)

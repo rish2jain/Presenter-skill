@@ -218,6 +218,32 @@ def _visual_placeholder(slide, pal, left, top, w, h):
            font=pal["font_label"])
 
 
+GHOST_KEEP_REAL = {"title", "section-divider", "closing", "agenda"}
+
+
+def build_ghost_slide(prs, p, pal, ctx):
+    """Skeleton slide: real heading + dashed placeholder describing the
+    planned exhibit. Used by build_deck --ghost for storyline alignment."""
+    slide = _blank_slide(prs, pal, pal["bg"])
+    _heading(slide, p, pal)
+    kind, value = parse_visual(p.get("visual", ""))
+    label = f"[ {p.get('layout', 'bullet-list')} ]"
+    if kind:
+        label += f"   planned visual — {kind}: {value}"
+    elif p.get("data"):
+        label += "   planned exhibit from Data block"
+    box = add_rect(slide, 0.7, 1.9, 11.9, 4.6, pal["surface"],
+                   line_hex=pal["text_muted"], line_pt=1.0)
+    from helpers import set_fill_alpha
+    set_fill_alpha(box, 40)
+    add_tb(slide, label, 0.9, 2.05, 11.5, 0.4, size=14, bold=True,
+           color=pal["text_muted"], font=pal["font_label"])
+    for i, b in enumerate(p.get("bullets", [])[:6]):
+        add_tb(slide, f"—  {split_icon(b)[1]}", 1.0, 2.7 + i * 0.55, 11.2,
+               0.5, size=12, color=pal["text_muted"], font=pal["font_body"])
+    return slide
+
+
 # ── Layouts ──────────────────────────────────────────────────────────────────
 def _slide_title(p, default=""):
     """Title text: explicit - Title: wins, then ## Slide N: heading."""
