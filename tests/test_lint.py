@@ -97,3 +97,31 @@ def test_font_check_skipped_when_inventory_unavailable(monkeypatch):
     _tb(_blank(prs), "hello", 1.0, 1.0)
     issues = pptx_lint.lint_deck(prs)
     assert not any("not installed" in w for w in issues["warn"]), issues
+
+
+def test_installed_fonts_returns_none_or_lowercase_set():
+    from pptx_lint import installed_fonts
+    fonts = installed_fonts()
+    assert fonts is None or (
+        isinstance(fonts, set) and all(f == f.lower() for f in fonts))
+
+
+def test_jiggle_blames_outlier_not_majority():
+    """Slide 1 is the outlier; only slide 1 should be blamed."""
+    prs = _prs()
+    # slide 1: left=11.4 (outlier); slides 2-4: left=11.9 (majority)
+    for i, left in enumerate((11.4, 11.9, 11.9, 11.9), start=1):
+        _tb(_blank(prs), str(i), left, 7.08)
+    issues = lint_deck(prs)
+    jiggle_errors = [e for e in issues["error"] if "jiggle" in e]
+    assert len(jiggle_errors) == 1, jiggle_errors
+    assert "Slide 1" in jiggle_errors[0], jiggle_errors[0]
+
+
+def test_jiggle_no_false_positive_when_all_aligned():
+    """Four perfectly aligned page numbers must produce zero jiggle errors."""
+    prs = _prs()
+    for i in range(1, 5):
+        _tb(_blank(prs), str(i), 11.9, 7.08)
+    issues = lint_deck(prs)
+    assert not any("jiggle" in e for e in issues["error"]), issues

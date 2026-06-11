@@ -18,7 +18,7 @@ Usage:
 import argparse
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -73,12 +73,13 @@ def check_jiggle(prs, issues):
     for role, occ in groups.items():
         if len(occ) < 3:
             continue
-        ref_l, ref_t = occ[0][1], occ[0][2]
-        for n, left, top in occ[1:]:
+        ref_l, ref_t = Counter(
+            (round(l, 2), round(t, 2)) for _, l, t in occ).most_common(1)[0][0]
+        for n, left, top in occ:
             if abs(left - ref_l) > POS_TOL_IN or abs(top - ref_t) > POS_TOL_IN:
                 issues["error"].append(
                     f"Slide {n}: '{role}' jiggle — at ({left:.2f},{top:.2f})in "
-                    f"but ({ref_l:.2f},{ref_t:.2f})in on slide {occ[0][0]}")
+                    f"but majority position is ({ref_l:.2f},{ref_t:.2f})in")
 
 
 def check_page_sequence(prs, issues):
@@ -123,8 +124,8 @@ def collect_inventory(prs):
     return fonts, colors
 
 
-def check_inventory(prs, issues, palette_key=None):
-    fonts, colors = collect_inventory(prs)
+def check_inventory(inv, issues, palette_key=None):
+    fonts, colors = inv
     if len(fonts) > MAX_FONTS:
         issues["warn"].append(
             f"deck uses {len(fonts)} fonts ({', '.join(sorted(fonts))}) — "
@@ -175,20 +176,20 @@ def installed_fonts():
             pass
     try:
         from matplotlib import font_manager
-        return {Path(f).stem.split("-")[0].lower()
-                for f in font_manager.findSystemFonts()} or None
-    except ImportError:
+        names = {n.lower() for n in font_manager.get_font_names()}
+        return names or None
+    except (ImportError, AttributeError):
         return None
 
 
-def check_fonts_installed(prs, issues):
+def check_fonts_installed(inv, issues):
     installed = installed_fonts()
     if installed is None:
         issues["warn"].append(
             "cannot enumerate installed fonts (no fc-list or matplotlib) — "
             "visual QA may silently substitute fonts")
         return
-    fonts, _ = collect_inventory(prs)
+    fonts, _ = inv
     for name, slides in sorted(fonts.items()):
         if name.lower() not in installed:
             where = ", ".join(str(s) for s in sorted(slides)[:5])
@@ -201,8 +202,9 @@ def lint_deck(prs, palette_key=None):
     issues = {"error": [], "warn": []}
     check_jiggle(prs, issues)
     check_page_sequence(prs, issues)
-    check_inventory(prs, issues, palette_key)
-    check_fonts_installed(prs, issues)
+    inv = collect_inventory(prs)
+    check_inventory(inv, issues, palette_key)
+    check_fonts_installed(inv, issues)
     return issues
 
 
