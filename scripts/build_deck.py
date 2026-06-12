@@ -46,6 +46,7 @@ FIELD_KEYS = {
     "X-axis": "x_axis", "Y-axis": "y_axis",
     "Q1": "q1", "Q2": "q2", "Q3": "q3", "Q4": "q4",
     "Sticker": "sticker", "Kicker": "kicker",
+    "Scale": "scale", "Sort": "sort", "Marker": "marker",
 }
 
 
@@ -332,6 +333,7 @@ ACTION_TITLE_LAYOUTS = {
     "comparison", "table", "stat-callout", "timeline", "waterfall",
     "matrix-2x2", "chart-callout", "dashboard", "funnel", "harvey-scorecard",
     "process-flow", "mekko", "gantt", "bar-mekko",
+    "heatmap-table", "tornado", "football-field",
 }
 
 
@@ -531,6 +533,40 @@ def validate(slides, ctx, meta=None):
                 except ValueError:
                     errors.append(f"{where}: Bar {bar.get('label', '')!r} has "
                                   "non-numeric Size/Value")
+        if layout == "heatmap-table":
+            from builders_consulting import _cell_value
+            t_rows = p.get("table_rows", [])
+            n_cols = max((len(r) for r in t_rows), default=0)
+            numeric = any(_cell_value(c) is not None
+                          for r in t_rows[1:] for c in r)
+            if len(t_rows) < 2 or n_cols < 2 or not numeric:
+                errors.append(f"{where}: heatmap-table needs a markdown table "
+                              "(header + body rows, 2+ columns) with at least "
+                              "one numeric body column")
+        if layout in ("tornado", "football-field"):
+            pairs = [d for d in p.get("data", [])
+                     if isinstance(d[1], list) and len(d[1]) == 2]
+            if len(pairs) < 2:
+                errors.append(f"{where}: {layout} needs '**Series:** Low, "
+                              "High' and 2+ '- Name: low, high' **Data:** rows")
+            elif layout == "football-field":
+                for lbl, (lo, hi) in pairs:
+                    if not lo < hi:
+                        errors.append(f"{where}: football-field row {lbl!r} "
+                                      f"needs low < high (got {lo:g}, {hi:g})")
+                if p.get("marker"):
+                    from builders_consulting import _parse_marker
+                    parsed = _parse_marker(p["marker"])
+                    gmin = min(v[0] for _, v in pairs)
+                    gmax = max(v[1] for _, v in pairs)
+                    if not parsed:
+                        warnings.append(
+                            f"{where}: Marker needs 'label, value' (got "
+                            f"{p['marker']!r}) — it will be skipped")
+                    elif not gmin <= parsed[1] <= gmax:
+                        warnings.append(
+                            f"{where}: Marker value {parsed[1]:g} outside "
+                            f"[{gmin:g}, {gmax:g}] — it will be skipped")
 
     # Narrative + data integrity
     warnings.extend(validate_narrative(meta, slides))

@@ -151,6 +151,9 @@ Generic bullets (`- text`) work on `bullet-list`, `two-column-split`, `exec-summ
 | `next-steps` | Conclusions for Q&A | Step N: Action/Owner/When |
 | `mekko` | Market maps, share-of-wallet | **Series:** segments + multi-value **Data:** |
 | `gantt` | Phased roadmaps, swimlanes | **Periods:** + Bar/Milestone rows |
+| `heatmap-table` | Benchmarks, scorecards by intensity | Markdown table, numeric cells heat-filled; optional `- Scale: rag` |
+| `tornado` | Sensitivity analysis | **Series:** Low, High + `- Driver: low, high` rows; optional `- Sort: off` |
+| `football-field` | Valuation ranges | **Series:** Low, High + `- Method: low, high` rows; optional `- Marker:` |
 
 ### Consulting layout syntax
 
@@ -226,6 +229,50 @@ Generic bullets (`- text`) work on `bullet-list`, `two-column-split`, `exec-summ
 - Bar: Row="Platform" Label="Pilot" Start="1" End="1"
 - Milestone: Row="Platform" Label="GA" At="3"
 ```
+
+```markdown
+## Slide 12: EMEA unit costs run 3x the NA baseline on every metric
+**Layout:** heatmap-table
+| Region | Cost | Churn % | NPS |
+|---|---|---|---|
+| NA | $10 | 5% | 62 |
+| EMEA | $30 | 7% | 41 |
+| APAC | $20 | 6% | 55 |
+- Scale: rag                ← optional: red/amber/green terciles instead of
+                              the default bg→accent1 heat per column
+- Notes: "Heat is normalized per column; text/$/% cells parse as numbers."
+
+## Slide 13: Margin and WACC swings drive a 35-point valuation range
+**Layout:** tornado
+**Series:** Downside, Upside     ← REQUIRED: exactly 2 names so the rows
+**Data:**                          parse as [low, high] pairs
+- WACC +/-1pt: -12, +18
+- Volume growth: -8, +10
+- Gross margin: -15, +20
+- Sort: off                 ← optional: keep input order (default sorts by
+                              |low|+|high| descending)
+- Notes: "Left bars = values[0] (accent2), right = values[1] (accent1)."
+
+## Slide 14: Three valuation methods converge on the $45-52 band
+**Layout:** football-field
+**Series:** Low, High            ← REQUIRED: 2 names → [low, high] pairs
+**Data:**
+- DCF: 42, 58
+- Trading comps: 45, 52
+- Precedent deals: 40, 50
+- Marker: Current price, 47 ← optional dashed vertical line + label; must
+                              fall inside the data range or it is skipped
+- Notes: "Floating bars low→high on a shared nice-interval axis."
+```
+
+`heatmap-table` needs a header row plus body rows with 2+ columns and at
+least one numeric body column (`--check` errors otherwise); non-numeric
+cells get a plain surface fill and cell text auto-switches black/white by
+fill luminance. `tornado` and `football-field` reuse the multi-series data
+parser — declare `**Series:**` with exactly two names or the rows won't
+parse as pairs (`--check` errors). `football-field` additionally requires
+low < high per row. Put `- Scale:` / `- Sort:` / `- Marker:` lines *after*
+the data rows — like any `- Key:` field they end the **Data:** block.
 
 `**Benchmark:** <value> "label"` adds a dashed reference line to bar/column/line/area charts. `**Exhibits:** on` (front-matter) numbers every sourced slide's footnote "Exhibit N · Source: ...". `agenda` slides highlight the row matching `- Current: "Section name"`. Section dividers automatically set the top-right section tracker label on subsequent content slides (`- Kicker:` is the bottom takeaway band — a different element).
 
@@ -331,6 +378,14 @@ any .pptx, including imported ones.
   (width ∝ Size, height = Value; Size>0, Value>=0). 2+ bars required.
 - `matrix-2x2` bubbles — add `Size="40"` to `- Item:` rows; bubble area
   scales with Size (BCG growth–share style).
+- `heatmap-table` — markdown table with per-column heat fills (bg→accent1);
+  `- Scale: rag` switches to red/amber/green terciles (palette keys
+  `rag_bad`/`rag_mid`/`rag_good`, overridable in custom palettes).
+- `tornado` — sensitivity bars off a central spine; needs `**Series:**` with
+  2 names + `- Driver: low, high` rows; `- Sort: off` keeps input order.
+- `football-field` — valuation range bars on a shared axis; needs
+  `**Series:**` with 2 names + `- Method: low, high` rows (low < high);
+  `- Marker: label, value` adds a dashed reference line.
 
 **Custom palettes:** drop `<name>.json` into `<assets>/palettes/`:
 

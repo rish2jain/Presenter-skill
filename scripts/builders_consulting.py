@@ -6,6 +6,8 @@ Registered into builders.LAYOUT_MAP at import time (see bottom of builders.py).
 All geometry is in design inches on the 13.33 x 7.5 canvas; builders' wrappers
 rescale to the actual slide size.
 """
+import re
+
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
@@ -705,3 +707,265 @@ def build_bar_mekko_slide(prs, p, pal, ctx):
 
 
 LAYOUTS["bar-mekko"] = build_bar_mekko_slide
+
+
+# ── heatmap table ────────────────────────────────────────────────────────────
+_CELL_NUM_RX = re.compile(r"-?\d[\d,]*\.?\d*")
+
+
+def _cell_value(cell):
+    """Numeric value of a table cell ('$1,200', '42%', '-3.5') or None."""
+    stripped = str(cell).strip().lstrip("$€£").rstrip("%").strip()
+    m = _CELL_NUM_RX.fullmatch(stripped)
+    return float(m.group().replace(",", "")) if m else None
+
+
+def _lerp_hex(a, b, t):
+    """Linear blend between two hex colors, t in 0..1."""
+    return "".join(
+        f"{round(int(a[i:i + 2], 16) + (int(b[i:i + 2], 16) - int(a[i:i + 2], 16)) * t):02X}"
+        for i in (0, 2, 4))
+
+
+def _bw_on(fill_hex):
+    """Pure black/white text by fill luminance. The 0.179 threshold is the
+    equal-contrast point, so the winner always clears 4.5:1 on any fill
+    (palette text colors can dip to ~4.3:1 on mid-tone heat cells)."""
+    return "000000" if _rel_lum(fill_hex) > 0.179 else "FFFFFF"
+
+
+def _rag_fill(v, svals, pal):
+    """Tercile thresholds over the column's sorted values -> red/amber/green."""
+    if svals[0] == svals[-1]:
+        return pal["rag_mid"]
+    n = len(svals)
+    t1, t2 = svals[(n - 1) // 3], svals[(2 * (n - 1)) // 3]
+    if v <= t1:
+        return pal["rag_bad"]
+    return pal["rag_mid"] if v <= t2 else pal["rag_good"]
+
+
+def build_heatmap_slide(prs, p, pal, ctx):
+    """Markdown table whose numeric body cells get heat fills, normalized
+    per column: bg at the column min -> accent1 at the max. '- Scale: rag'
+    switches to terciled red/amber/green chips. Non-numeric body cells get
+    a plain surface fill; cell text picks its color by fill luminance."""
+    rows = p.get("table_rows", [])
+    if len(rows) < 2:
+        warn("heatmap-table needs a markdown table; rendering as table")
+        return B.build_table_slide(prs, p, pal, ctx)
+    slide = B._blank_slide(prs, pal, pal["bg"])
+    B._heading(slide, p, pal)
+    rag = p.get("scale", "").strip().lower() == "rag"
+
+    n_cols = max(len(r) for r in rows)
+    col_vals = []  # per column: sorted numeric body values
+    for c in range(n_cols):
+        nums = [_cell_value(r[c]) for r in rows[1:] if c < len(r)]
+        col_vals.append(sorted(v for v in nums if v is not None))
+
+    first_col_w = 3.2
+    col_w = (11.9 - first_col_w) / max(n_cols - 1, 1)
+    # rows + 0.06 gaps must clear the footer zone (1.9 + total <= 6.6)
+    row_h = min(0.72, 4.7 / len(rows) - 0.06)
+    top = 1.9
+    for r, row in enumerate(rows):
+        y = top + r * (row_h + 0.06)
+        for c in range(n_cols):
+            cell = row[c] if c < len(row) else ""
+            x = 0.7 + (first_col_w + (c - 1) * col_w if c else 0)
+            w = col_w if c else first_col_w
+            if r == 0:  # header
+                B.add_tb(slide, cell, x + (0.12 if c == 0 else 0),
+                         y + row_h / 2 - 0.16, w, 0.35, size=13, bold=True,
+                         color=pal["accent1"],
+                         align=PP_ALIGN.CENTER if c else PP_ALIGN.LEFT,
+                         font=pal["font_body"])
+                continue
+            v = _cell_value(cell)
+            if v is None or not col_vals[c]:
+                fill, text_color = pal["surface"], pal["text"]
+            elif rag:
+                fill = _rag_fill(v, col_vals[c], pal)
+                text_color = _bw_on(fill)
+            else:
+                lo, hi = col_vals[c][0], col_vals[c][-1]
+                t = (v - lo) / (hi - lo) if hi > lo else 0.5
+                fill = _lerp_hex(pal["bg"], pal["accent1"], t)
+                text_color = _bw_on(fill)
+            B.add_rect(slide, x + 0.03, y, w - 0.06, row_h, fill)
+            B.add_tb(slide, cell, x + (0.12 if c == 0 else 0),
+                     y + row_h / 2 - 0.16, w, 0.35, size=12, color=text_color,
+                     align=PP_ALIGN.CENTER if c else PP_ALIGN.LEFT,
+                     font=pal["font_body"])
+    return slide
+
+
+LAYOUTS["heatmap-table"] = build_heatmap_slide
+
+
+# ── tornado (sensitivity) ────────────────────────────────────────────────────
+def build_tornado_slide(prs, p, pal, ctx):
+    """Sensitivity tornado built from shapes. Requires **Series:** Low, High
+    (2 names) so '- Driver: -12, +18' rows parse as 2-lists; bars hang off a
+    central label gutter — left = values[0] (accent2), right = values[1]
+    (accent1), shared symmetric scale, value labels at the outer ends. Rows
+    sort by |left|+|right| descending unless '- Sort: off'."""
+    rows = [(lbl, v) for lbl, v in p.get("data", [])
+            if isinstance(v, list) and len(v) == 2]
+    if len(rows) < 2:
+        warn("tornado needs **Series:** Low, High and 2+ "
+             "'- Driver: low, high' **Data:** rows")
+        return B.build_bullet_slide(prs, p, pal, ctx)
+    if p.get("sort", "").strip().lower() not in ("off", "no", "false"):
+        rows.sort(key=lambda r: abs(r[1][0]) + abs(r[1][1]), reverse=True)
+    slide = B._blank_slide(prs, pal, pal["bg"])
+    B._heading(slide, p, pal)
+
+    top, bottom = 2.0, 6.3
+    cx, gutter = 6.65, 1.25   # spine center + half-width of the label gutter
+    val_w = 0.72              # outer value-label zone per side
+    half_w = cx - gutter - 0.7 - val_w
+    vmax = max(max(abs(v[0]), abs(v[1])) for _, v in rows) or 1
+    row_h = min(0.78, (bottom - top) / len(rows))
+    bar_h = min(0.42, row_h - 0.16)
+
+    names = [s.strip() for s in p.get("series", "").split(",") if s.strip()]
+    if len(names) >= 2:  # side headers above the two bar areas
+        B.add_tb(slide, names[0], 0.7, top - 0.42, cx - gutter - 0.75, 0.3,
+                 size=11, bold=True, color=pal["text_muted"],
+                 align=PP_ALIGN.RIGHT, font=pal["font_label"])
+        B.add_tb(slide, names[1], cx + gutter + 0.05, top - 0.42,
+                 12.6 - cx - gutter, 0.3, size=11, bold=True,
+                 color=pal["text_muted"], font=pal["font_label"])
+    chart_h = row_h * len(rows)
+    for gx in (cx - gutter, cx + gutter):  # spine edges the bars hang off
+        B.add_rect(slide, gx - 0.009, top, 0.018, chart_h, pal["text_muted"])
+    for i, (label, (lo, hi)) in enumerate(rows):
+        y = top + i * row_h + (row_h - bar_h) / 2
+        wl = max(half_w * abs(lo) / vmax, 0.02)
+        wr = max(half_w * abs(hi) / vmax, 0.02)
+        B.add_rect(slide, cx - gutter - wl, y, wl, bar_h, pal["accent2"])
+        B.add_rect(slide, cx + gutter, y, wr, bar_h, pal["accent1"])
+        B.add_tb(slide, label, cx - gutter + 0.05, y + bar_h / 2 - 0.16,
+                 2 * gutter - 0.1, 0.35, size=12, bold=True, color=pal["text"],
+                 align=PP_ALIGN.CENTER, font=pal["font_body"])
+        B.add_tb(slide, _fmt_num(lo), cx - gutter - wl - val_w - 0.05,
+                 y + bar_h / 2 - 0.16, val_w, 0.32, size=12,
+                 color=pal["text_muted"], align=PP_ALIGN.RIGHT,
+                 font=pal["font_label"])
+        B.add_tb(slide, _fmt_num(hi, signed=hi > 0), cx + gutter + wr + 0.05,
+                 y + bar_h / 2 - 0.16, val_w, 0.32, size=12,
+                 color=pal["text_muted"], font=pal["font_label"])
+    return slide
+
+
+LAYOUTS["tornado"] = build_tornado_slide
+
+
+# ── football field (valuation ranges) ────────────────────────────────────────
+def _parse_marker(spec):
+    """'Current price, 47' -> ('Current price', 47.0) or None."""
+    label, sep, val = (spec or "").rpartition(",")
+    m = _CELL_NUM_RX.search(val)
+    if not sep or not m or not label.strip():
+        return None
+    return label.strip().strip('"'), float(m.group().replace(",", ""))
+
+
+def build_football_field_slide(prs, p, pal, ctx):
+    """Valuation football field. Requires **Series:** Low, High so
+    '- Method: low, high' rows parse as 2-lists; each row is a floating
+    rounded bar low->high on a shared value axis with nice-interval
+    gridlines. Optional '- Marker: label, value' draws a dashed vertical
+    reference line (skipped with a warning outside the data range)."""
+    rows = [(lbl, v[0], v[1]) for lbl, v in p.get("data", [])
+            if isinstance(v, list) and len(v) == 2 and v[0] < v[1]]
+    if len(rows) < 2:
+        warn("football-field needs **Series:** Low, High and 2+ "
+             "'- Method: low, high' **Data:** rows (low < high)")
+        return B.build_bullet_slide(prs, p, pal, ctx)
+    slide = B._blank_slide(prs, pal, pal["bg"])
+    B._heading(slide, p, pal)
+
+    import math
+    from charts import _nice_ceil
+    gmin = min(lo for _, lo, _ in rows)
+    gmax = max(hi for _, _, hi in rows)
+    step = _nice_ceil((gmax - gmin) / 5 or 1)
+    a0 = math.floor(gmin / step) * step
+    a1 = math.ceil(gmax / step) * step
+    if a1 <= a0:
+        a1 = a0 + step
+
+    # axis labels must stay above the footer zone (top <= 6.0in) or
+    # pptx_lint's page-number heuristics flag the digit-only tick labels
+    L, R, top, bottom = 3.5, 12.5, 2.0, 5.85
+
+    def vx(v):
+        return L + (v - a0) / (a1 - a0) * (R - L)
+
+    for k in range(int(round((a1 - a0) / step)) + 1):  # gridlines + axis
+        v = a0 + k * step
+        B.add_rect(slide, vx(v) - 0.0075, top, 0.015, bottom - top,
+                   pal["surface"])
+        B.add_tb(slide, _fmt_plain(v), vx(v) - 0.6, bottom + 0.08, 1.2, 0.3,
+                 size=11, color=pal["text_muted"], align=PP_ALIGN.CENTER,
+                 font=pal["font_label"])
+
+    from palettes import hex_rgb
+    row_h = min(0.9, (bottom - top) / len(rows))
+    bar_h = min(0.46, row_h - 0.22)
+    for i, (label, lo, hi) in enumerate(rows):
+        y = top + i * row_h + (row_h - bar_h) / 2
+        x0, x1 = vx(lo), vx(hi)
+        sl, st, sw, sh = B._sc(x0, y, x1 - x0, bar_h)
+        bar = slide.shapes.add_shape(5, Inches(sl), Inches(st),
+                                     Inches(sw), Inches(sh))  # 5 = ROUNDED_RECT
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = hex_rgb(pal["accent1"])
+        bar.line.fill.background()
+        B.add_tb(slide, label, 0.7, y + bar_h / 2 - 0.17, 2.3, 0.38, size=13,
+                 bold=True, color=pal["text"], align=PP_ALIGN.RIGHT,
+                 font=pal["font_body"])
+        B.add_tb(slide, _fmt_plain(lo), x0 - 0.78, y + bar_h / 2 - 0.16, 0.7,
+                 0.32, size=12, color=pal["text_muted"], align=PP_ALIGN.RIGHT,
+                 font=pal["font_label"])
+        B.add_tb(slide, _fmt_plain(hi), x1 + 0.05, y + bar_h / 2 - 0.16, 0.7,
+                 0.32, size=12, color=pal["text_muted"],
+                 font=pal["font_label"])
+    _football_marker(slide, p, pal, top, bottom, vx, gmin, gmax)
+    return slide
+
+
+def _football_marker(slide, p, pal, top, bottom, vx, gmin, gmax):
+    """Dashed vertical reference line + label for '- Marker: label, value'."""
+    spec = p.get("marker")
+    if not spec:
+        return
+    parsed = _parse_marker(spec)
+    if not parsed:
+        warn(f"Marker needs 'label, value': {spec!r} — skipped")
+        return
+    label, value = parsed
+    if not gmin <= value <= gmax:
+        warn(f"Marker {label!r} value {value:g} outside range "
+             f"[{gmin:g}, {gmax:g}] — skipped")
+        return
+    from pptx.enum.dml import MSO_LINE_DASH_STYLE
+    from pptx.enum.shapes import MSO_CONNECTOR
+    from palettes import hex_rgb
+    x = vx(value)
+    l, t, _, h = B._sc(x, top - 0.12, 0, bottom - top + 0.12)
+    conn = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,
+                                      Inches(l), Inches(t),
+                                      Inches(l), Inches(t + h))
+    conn.line.color.rgb = hex_rgb(pal["accent3"])
+    conn.line.width = Pt(1.75)
+    conn.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+    B.add_tb(slide, f"{label} · {_fmt_plain(value)}", x - 1.2, top - 0.46,
+             2.4, 0.3, size=11, bold=True, color=pal["text_muted"],
+             align=PP_ALIGN.CENTER, font=pal["font_label"])
+
+
+LAYOUTS["football-field"] = build_football_field_slide

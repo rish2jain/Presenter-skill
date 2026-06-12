@@ -271,6 +271,190 @@ def test_bar_mekko_rejects_negative_values_in_validate():
     errors, _ = validate(slides, CTX, meta)
     assert any("Size>0" in e for e in errors), errors
 
+def _fill_of(shape):
+    try:
+        return str(shape.fill.fore_color.rgb)
+    except (AttributeError, TypeError):
+        return None
+
+
+def _fills(slide):
+    return [f for f in (_fill_of(s) for s in slide.shapes) if f]
+
+
+# ── heatmap-table ────────────────────────────────────────────────────────────
+HEATMAP_MD = """## Slide 1: EMEA unit costs run 3x the NA baseline
+**Layout:** heatmap-table
+| Region | Cost | Churn |
+|---|---|---|
+| NA | 10 | 5 |
+| EMEA | 30 | 7 |
+| APAC | 20 | 6 |
+"""
+
+
+def test_heatmap_fills_interpolate_per_column():
+    from builders_consulting import build_heatmap_slide
+    _, slides = parse_outline(HEATMAP_MD)
+    slide = build_heatmap_slide(_prs(), slides[0], PAL, CTX)
+    fills = _fills(slide)
+    assert PAL["bg"] in fills                 # column-min cells
+    assert fills.count(PAL["accent1"]) >= 3   # accent bar + 2 column-max cells
+    # midpoint cells (20 of 10-30, 6 of 5-7) -> exact 50% bg->accent1 blend
+    assert fills.count("6A5C35") == 2, fills
+
+
+def test_heatmap_rag_scale_uses_rag_palette():
+    from builders_consulting import build_heatmap_slide
+    md = HEATMAP_MD + "- Scale: rag\n"
+    _, slides = parse_outline(md)
+    assert slides[0]["scale"] == "rag"
+    slide = build_heatmap_slide(_prs(), slides[0], PAL, CTX)
+    fills = _fills(slide)
+    for key in ("rag_bad", "rag_mid", "rag_good"):
+        assert PAL[key] in fills, (key, fills)
+
+
+def test_heatmap_rag_defaults_on_all_builtin_palettes():
+    import re as _re
+    from palettes import PALETTES
+    for name, pal in PALETTES.items():
+        for key in ("rag_bad", "rag_mid", "rag_good"):
+            assert _re.fullmatch(r"[0-9A-Fa-f]{6}", pal[key]), (name, key)
+
+
+def test_heatmap_validator_requires_numeric_table():
+    md = """## Slide 1: Heatmap without any numeric body column must fail
+**Layout:** heatmap-table
+| A | B |
+|---|---|
+| x | y |
+"""
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("heatmap-table" in e for e in errors), errors
+
+
+# ── tornado ──────────────────────────────────────────────────────────────────
+TORNADO_MD = """## Slide 1: Margin and WACC swings dominate the 35-point range
+**Layout:** tornado
+**Series:** Low, High
+**Data:**
+- WACC: -12, 18
+- Growth: -8, 10
+- Margin: -15, 20
+"""
+
+
+def _tornado_right_widths(slide):
+    """Widths of right-side (accent1) bars, top-to-bottom."""
+    bars = sorted((s.top, s.width) for s in slide.shapes
+                  if _fill_of(s) == PAL["accent1"]
+                  and 0.1 < s.height.inches < 0.6 and s.width.inches < 5)
+    return [w for _, w in bars]
+
+
+def test_tornado_sorts_by_span_and_scales_bars():
+    from builders_consulting import build_tornado_slide
+    _, slides = parse_outline(TORNADO_MD)
+    assert slides[0]["data"][0] == ("WACC", [-12.0, 18.0])
+    slide = build_tornado_slide(_prs(), slides[0], PAL, CTX)
+    widths = _tornado_right_widths(slide)
+    assert len(widths) == 3
+    # sorted by |low|+|high| desc: Margin (35), WACC (30), Growth (18)
+    assert widths[0] > widths[1] > widths[2]
+    assert abs(widths[0] / widths[2] - 2.0) < 0.05  # right values 20 vs 10
+    texts = _texts(slide)
+    for expected in ("-12", "+18", "Margin", "Low", "High"):
+        assert any(expected in t for t in texts), (expected, texts)
+
+
+def test_tornado_sort_off_preserves_input_order():
+    from builders_consulting import build_tornado_slide
+    md = TORNADO_MD + "- Sort: off\n"
+    _, slides = parse_outline(md)
+    slide = build_tornado_slide(_prs(), slides[0], PAL, CTX)
+    widths = _tornado_right_widths(slide)
+    # input order: WACC (18), Growth (10), Margin (20)
+    assert widths[2] > widths[0] > widths[1]
+
+
+def test_tornado_validator_requires_two_pair_rows():
+    md = """## Slide 1: Tornado without a two-name Series declaration fails
+**Layout:** tornado
+**Data:**
+- WACC: -12
+"""
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("tornado" in e for e in errors), errors
+
+
+# ── football-field ───────────────────────────────────────────────────────────
+FOOTBALL_MD = """## Slide 1: Valuation methods converge on the 45-52 band
+**Layout:** football-field
+**Series:** Low, High
+**Data:**
+- DCF: 42, 58
+- Comparables: 45, 52
+- Precedents: 40, 50
+- Marker: Current price, 47
+"""
+
+
+def test_football_field_bars_and_marker():
+    from builders_consulting import build_football_field_slide
+    _, slides = parse_outline(FOOTBALL_MD)
+    assert slides[0]["marker"] == "Current price, 47"
+    slide = build_football_field_slide(_prs(), slides[0], PAL, CTX)
+    rounds = [el for el in slide.shapes._spTree.findall(".//" + qn("a:prstGeom"))
+              if el.get("prst") == "roundRect"]
+    assert len(rounds) == 3
+    assert len(slide.shapes._spTree.findall(qn("p:cxnSp"))) == 1  # marker line
+    texts = _texts(slide)
+    for expected in ("DCF", "42", "58", "Current price"):
+        assert any(expected in t for t in texts), (expected, texts)
+
+
+def test_football_field_bar_widths_proportional_to_range():
+    from builders_consulting import build_football_field_slide
+    from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
+    _, slides = parse_outline(FOOTBALL_MD)
+    slide = build_football_field_slide(_prs(), slides[0], PAL, CTX)
+    bars = sorted((s.top, s.width) for s in slide.shapes
+                  if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+                  and s.auto_shape_type == MSO_SHAPE.ROUNDED_RECTANGLE)
+    widths = [w for _, w in bars]  # row order: DCF 16, Comparables 7, Precedents 10
+    assert abs(widths[0] / widths[1] - 16 / 7) < 0.05
+    assert abs(widths[0] / widths[2] - 16 / 10) < 0.05
+
+
+def test_football_marker_outside_range_warns_and_skips(capsys):
+    md = FOOTBALL_MD.replace("Current price, 47", "Current price, 99")
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert any("Marker" in w and "outside" in w for w in warnings), warnings
+    from builders_consulting import build_football_field_slide
+    slide = build_football_field_slide(_prs(), slides[0], PAL, CTX)
+    assert "Marker" in capsys.readouterr().err
+    assert not slide.shapes._spTree.findall(qn("p:cxnSp"))
+
+
+def test_football_validator_rejects_inverted_range():
+    md = FOOTBALL_MD.replace("DCF: 42, 58", "DCF: 58, 42")
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("low < high" in e for e in errors), errors
+
+
+def test_new_layouts_registered_and_action_titled():
+    from build_deck import ACTION_TITLE_LAYOUTS
+    for name in ("heatmap-table", "tornado", "football-field"):
+        assert name in builders.LAYOUT_MAP
+        assert name in ACTION_TITLE_LAYOUTS
+        assert name not in builders.GHOST_KEEP_REAL  # ghosts like other exhibits
+
+
 def test_matrix_bubble_clamped_inside_plot():
     from builders_consulting import build_matrix_slide
     md = BUBBLE_MD.replace('X="0.8" Y="0.8"', 'X="1.0" Y="1.0"')

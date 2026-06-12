@@ -97,6 +97,13 @@ def _fill_defaults(pal):
         pal.setdefault(k, v)
     pal.setdefault("chart_series",
                    [pal["accent1"], pal["accent2"], pal["accent3"]])
+    # RAG status fills (heatmap-table '- Scale: rag'); deeper tones on light
+    # themes so the chips read as filled against white surfaces. Cell text
+    # color is picked per-fill by luminance, so both sets stay readable.
+    dark = bool(pal.get("dark"))
+    pal.setdefault("rag_bad", "C0504D" if dark else "B3453F")
+    pal.setdefault("rag_mid", "E8A33D" if dark else "C97E1F")
+    pal.setdefault("rag_good", "4F9D69" if dark else "3D8456")
     return pal
 
 
@@ -137,6 +144,9 @@ def load_custom_palettes(palettes_dir):
                 bad.append("chart_series: too few colors")
             bad += [f"chart_series[{i}]" for i, c in enumerate(series)
                     if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(c))]
+        bad += [k for k in ("rag_bad", "rag_mid", "rag_good")
+                if k in pal and not re.fullmatch(r"[0-9A-Fa-f]{6}",
+                                                 str(pal[k]))]
         if bad:
             print(f"  [WARN] palette {f.name}: non-hex color values "
                   f"{bad} — skipped", file=sys.stderr)

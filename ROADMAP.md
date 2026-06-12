@@ -73,7 +73,7 @@ Files: `scripts/build_deck.py`, `scripts/builders.py` (small helpers),
   quote layouts (heuristic: PP_ALIGN.CENTER on a text frame taller than 1in below y=1.5in);
   (c) placeholder-text regex extended with `this.*(page|slide).*layout` and `lorem ipsum`.
 
-## T4. New chart layouts: heatmap-table, tornado, football-field — `[ ]`
+## T4. New chart layouts: heatmap-table, tornado, football-field — `[x]`
 
 Files: `scripts/builders_consulting.py` (register in LAYOUTS), `scripts/build_deck.py`
 (validation), `references/generation-guide.md`, `tests/test_consulting.py`.
