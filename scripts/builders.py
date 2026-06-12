@@ -163,7 +163,8 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
     if kind == "chart" and p.get("data"):
         cats = [d[0] for d in p["data"]]
         series_field = p.get("series", "")
-        if series_field and "," in series_field:
+        multi_series = bool(series_field and "," in series_field)
+        if multi_series:
             names = [n.strip() for n in series_field.split(",") if n.strip()]
             series_dict = {
                 names[i]: [
@@ -192,9 +193,15 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
                     user_max = float(p["axis_max"]) if p.get("axis_max") else None
                 except (ValueError, TypeError):
                     user_max = None
+                    warn(f"Axis-Max not numeric: {p.get('axis_max')!r} "
+                         f"(chart:{value}, CAGR)")
                 add_cagr_arrow(slide, chart, pal, *_sc(left, top, w, h),
                                axis_max=user_max)
-        if p.get("axis_max"):
+        # CAGR path passes axis_max into add_cagr_arrow; don't overwrite after.
+        cagr_sets_axis = (
+            p.get("cagr") and not multi_series
+            and value in ("bar", "column", "line"))
+        if p.get("axis_max") and not cagr_sets_axis:
             try:
                 chart.value_axis.maximum_scale = float(p["axis_max"])
                 chart.value_axis.minimum_scale = 0.0

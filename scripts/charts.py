@@ -3,6 +3,8 @@
 The critical detail: default charts render with an opaque white chart/plot
 area, which looks broken on dark slides. make_chart_transparent() clears both.
 """
+import logging
+from importlib.metadata import PackageNotFoundError, version
 from lxml import etree
 from pptx.chart.data import ChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
@@ -10,6 +12,8 @@ from pptx.util import Inches, Pt
 from pptx.oxml.ns import qn
 
 from palettes import hex_rgb
+
+logger = logging.getLogger(__name__)
 
 CHART_TYPES = {
     "bar": XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -185,12 +189,44 @@ def add_benchmark_line(slide, chart, pal, spec, left, top, w, h):
     run.font.name = pal["font_label"]
 
 
-def _add_arrowhead(conn):
-    ln = conn.line._get_or_add_ln()
+def _pptx_version_string():
+    try:
+        return version("python-pptx")
+    except PackageNotFoundError:
+        return None
+
+
+def add_arrowhead_to_connector(conn, *, warn=False):
+    """Add a triangle tailEnd to a connector line, when supported.
+
+    python-pptx has no public connector arrowhead API (as of 1.0.x). When
+    ``LineFormat._get_or_add_ln`` exists we append ``a:tailEnd`` via that
+    private helper; otherwise this is a no-op.
+    """
+    line = conn.line
+    getter = getattr(line, "_get_or_add_ln", None)
+    if getter is None:
+        if warn:
+            logger.warning(
+                "Skipping connector arrowhead: LineFormat._get_or_add_ln unavailable "
+                "(python-pptx %s). CAGR arrow renders without tail triangle.",
+                _pptx_version_string() or "unknown",
+            )
+        return False
+
+    # Private-API workaround — remove when python-pptx exposes a public tailEnd
+    # setter (e.g. line.end_arrow_type). See add_arrowhead_to_connector docstring.
+    ln = getter()
     tail = etree.SubElement(ln, qn("a:tailEnd"))
     tail.set("type", "triangle")
     tail.set("w", "med")
     tail.set("len", "med")
+    return True
+
+
+def _add_arrowhead(conn):
+    # Delegates to add_arrowhead_to_connector; see there for private-API notes.
+    add_arrowhead_to_connector(conn, warn=True)
 
 
 def add_cagr_arrow(slide, chart, pal, left, top, w, h, axis_max=None):

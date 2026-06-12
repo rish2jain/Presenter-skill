@@ -35,6 +35,32 @@ MAX_COLORS = 14
 PAGENUM_RX = re.compile(r"^(B·)?\d+$")
 # waterfall negative red, pure white/black (cards, shadows) are always allowed
 EXTRA_ALLOWED = {"D9655B", "FFFFFF", "000000"}
+_HEX6 = re.compile(r"[0-9A-Fa-f]{6}")
+
+
+def _chart_series_allowed(pal, issues):
+    """Return uppercased hex colors from chart_series; warn on bad entries."""
+    allowed = set()
+    series = pal.get("chart_series")
+    if series is None:
+        return allowed
+    if not isinstance(series, list):
+        issues["warn"].append(
+            f"palette chart_series is not a list ({type(series).__name__}) — "
+            "skipped for whitelist")
+        return allowed
+    for i, item in enumerate(series):
+        if not isinstance(item, str):
+            issues["warn"].append(
+                f"palette chart_series[{i}] is not a string "
+                f"({type(item).__name__}) — skipped")
+            continue
+        if not _HEX6.fullmatch(item):
+            issues["warn"].append(
+                f"palette chart_series[{i}] is not a 6-digit hex color — skipped")
+            continue
+        allowed.add(item.upper())
+    return allowed
 
 
 def _shape_box_in(shape):
@@ -147,8 +173,8 @@ def check_inventory(inv, issues, palette_key=None):
                                   "skipping whitelist check")
             return
         allowed = {v.upper() for v in pal.values()
-                   if isinstance(v, str) and re.fullmatch(r"[0-9A-Fa-f]{6}", v)}
-        allowed |= {c.upper() for c in pal.get("chart_series", [])}
+                   if isinstance(v, str) and _HEX6.fullmatch(v)}
+        allowed |= _chart_series_allowed(pal, issues)
         allowed |= EXTRA_ALLOWED
         for hexv, slides in sorted(colors.items()):
             if hexv.upper() not in allowed:

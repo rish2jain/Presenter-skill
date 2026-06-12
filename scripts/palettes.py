@@ -131,8 +131,12 @@ def load_custom_palettes(palettes_dir):
         hex_keys = REQUIRED_KEYS - {"dark"}
         bad = [k for k in sorted(hex_keys)
                if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(pal.get(k, "")))]
-        bad += [f"chart_series[{i}]" for i, c in enumerate(pal.get("chart_series", []))
-                if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(c))]
+        series = pal.get("chart_series")
+        if series is not None:
+            if len(series) < 3:
+                bad.append("chart_series: too few colors")
+            bad += [f"chart_series[{i}]" for i, c in enumerate(series)
+                    if not re.fullmatch(r"[0-9A-Fa-f]{6}", str(c))]
         if bad:
             print(f"  [WARN] palette {f.name}: non-hex color values "
                   f"{bad} — skipped", file=sys.stderr)

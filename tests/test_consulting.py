@@ -227,10 +227,9 @@ def test_bar_mekko_widths_proportional_to_size():
 def test_bar_mekko_registered_and_validated():
     import builders
     assert "bar-mekko" in builders.LAYOUT_MAP
-    _, slides = parse_outline("## Slide 1: Bad mekko\n**Layout:** bar-mekko\n")
-    errors, _ = validate(slides, CTX)
+    meta, slides = parse_outline("## Slide 1: Bad mekko\n**Layout:** bar-mekko\n")
+    errors, _ = validate(slides, CTX, meta)
     assert any("bar-mekko" in e for e in errors)
-
 
 BUBBLE_MD = """## Slide 1: Two bets dominate the portfolio by revenue at stake
 **Layout:** matrix-2x2
@@ -252,7 +251,7 @@ def test_matrix_bubble_sizes_scale():
              and s.width == s.height and s.width.inches > 0.1]
     assert len(ovals) == 2
     big, small = sorted((o.width.inches for o in ovals), reverse=True)
-    assert big > small * 1.8, (big, small)  # sqrt(40/5) ≈ 2.8x diameter
+    assert big > small * 1.8, (big, small)  # d=0.24+0.66*(s/smax)^0.5 → ~1.9x (40 vs 5)
 
 
 def test_matrix_negative_size_falls_back_to_fixed_dot():
@@ -268,10 +267,9 @@ def test_matrix_negative_size_falls_back_to_fixed_dot():
 
 def test_bar_mekko_rejects_negative_values_in_validate():
     md = BAR_MEKKO_MD.replace('Size="30"', 'Size="-30"')
-    _, slides = parse_outline(md)
-    errors, _ = validate(slides, CTX)
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
     assert any("Size>0" in e for e in errors), errors
-
 
 def test_matrix_bubble_clamped_inside_plot():
     from builders_consulting import build_matrix_slide

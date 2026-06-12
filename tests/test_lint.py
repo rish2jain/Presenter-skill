@@ -160,3 +160,30 @@ def test_lint_with_custom_palette(tmp_path):
         assert not any("FEE715" in e for e in issues["error"]), issues
     finally:
         PALETTES.pop("lintbrand", None)
+
+
+def test_lint_tolerates_malformed_chart_series():
+    from palettes import PALETTES
+    PALETTES["malformed"] = {
+        **PALETTES["midnight-executive"],
+        "chart_series": [123, None, "FEE715", "not-hex"],
+    }
+    try:
+        prs = _prs()
+        _tb(_blank(prs), "branded", 1.0, 1.0, color="FEE715")
+        issues = lint_deck(prs, palette_key="malformed")
+        assert not any("unknown palette" in w for w in issues["warn"]), issues
+        assert not any("FEE715" in e for e in issues["error"]), issues
+        assert any("chart_series" in w for w in issues["warn"]), issues
+    finally:
+        PALETTES.pop("malformed", None)
+
+
+def test_lint_tolerates_non_list_chart_series():
+    from palettes import PALETTES
+    PALETTES["badseries"] = {**PALETTES["midnight-executive"], "chart_series": 42}
+    try:
+        issues = lint_deck(_prs(), palette_key="badseries")
+        assert any("chart_series is not a list" in w for w in issues["warn"]), issues
+    finally:
+        PALETTES.pop("badseries", None)

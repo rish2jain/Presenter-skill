@@ -153,6 +153,22 @@ def test_custom_palette_with_non_hex_colors_rejected(tmp_path):
     assert "named" not in PALETTES
 
 
+def test_custom_palette_rejects_short_chart_series(tmp_path):
+    import json
+    from palettes import PALETTES, load_custom_palettes
+    pdir = tmp_path / "palettes"
+    pdir.mkdir()
+    base = {
+        "bg": "101820", "bg_deep": "0A0F14", "surface": "1E2A33",
+        "accent1": "FEE715", "accent2": "8DA9C4", "accent3": "5C946E",
+        "text": "F4F4F4", "text_muted": "9DB2BF", "dark": True,
+        "chart_series": ["FEE715", "8DA9C4"],
+    }
+    (pdir / "short-series.json").write_text(json.dumps(base))
+    assert load_custom_palettes(pdir) == []
+    assert "short-series" not in PALETTES
+
+
 def test_dump_numbers_extracts_per_slide(capsys, tmp_path):
     from pptx import Presentation
     from pptx.util import Inches

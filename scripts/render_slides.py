@@ -40,7 +40,7 @@ def _pptx_to_pdf(pptx_path, tmp):
     result = subprocess.run(
         ["soffice", "--headless", "--convert-to", "pdf",
          "--outdir", tmp, str(pptx_path)],
-        capture_output=True, text=True)
+        capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
         raise RuntimeError(f"LibreOffice failed: {result.stderr}")
     pdf_files = list(Path(tmp).glob("*.pdf"))
