@@ -901,3 +901,31 @@ def test_t5_layouts_registered_and_action_titled():
         assert name in builders.LAYOUT_MAP
         assert name in ACTION_TITLE_LAYOUTS
         assert name not in builders.GHOST_KEEP_REAL
+
+
+def test_next_steps_renders_plain_bullets_as_cards():
+    # bullets validate for next-steps, so the builder must render them too
+    from builders_consulting import build_next_steps_slide
+    md = ('## Slide 1: Decisions needed today keep us on plan\n'
+          '**Layout:** next-steps\n'
+          '- icon:check Approve the program budget\n'
+          '- Name the accountable owners by Friday\n')
+    _, slides = parse_outline(md)
+    slide = build_next_steps_slide(_prs(), slides[0], PAL, CTX)
+    texts = _texts(slide)
+    assert any("Approve the program budget" in t for t in texts), texts
+    assert any("Name the accountable owners" in t for t in texts)
+    assert not any("icon:" in t for t in texts)  # icon prefix stripped
+
+
+def test_process_flow_bullet_fallback_strips_icon_prefix():
+    from builders_consulting import build_process_flow_slide
+    md = ('## Slide 1: The rollout runs in three controlled waves\n'
+          '**Layout:** process-flow\n'
+          '- icon:rocket Pilot with two business units\n'
+          '- Scale to all regions\n')
+    _, slides = parse_outline(md)
+    slide = build_process_flow_slide(_prs(), slides[0], PAL, CTX)
+    texts = _texts(slide)
+    assert any("Pilot with two business units" in t for t in texts), texts
+    assert not any("icon:" in t for t in texts)

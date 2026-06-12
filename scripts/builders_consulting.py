@@ -249,7 +249,8 @@ def build_harvey_slide(prs, p, pal, ctx):
 def build_process_flow_slide(prs, p, pal, ctx):
     steps = p.get("steps", [])[:6]
     if not steps:
-        steps = [{"title": b} for b in p.get("bullets", [])[:6]]
+        steps = [{"title": B.split_icon(b)[1]}
+                 for b in p.get("bullets", [])[:6]]
     slide = B._blank_slide(prs, pal, pal["bg"])
     B._heading(slide, p, pal)
     n = max(len(steps), 1)
@@ -411,6 +412,9 @@ def _fmt_plain(v):
 # ── next steps (conclusions that stay up during Q&A) ─────────────────────────
 def build_next_steps_slide(prs, p, pal, ctx):
     steps = p.get("steps", [])[:6]
+    if not steps:  # plain bullets validate too — render them as step cards
+        steps = [{"action": B.split_icon(b)[1]}
+                 for b in p.get("bullets", [])[:6]]
     slide = B._blank_slide(prs, pal, pal["bg"])
     B._heading(slide, p, pal)
     from helpers import add_soft_shadow
