@@ -397,6 +397,7 @@ both are present.
   "Opening", each divider starts a section named by its heading, appendix
   slides → "Backup". Default on at 2+ dividers, off below; styled builds
   only (skipped in template mode). Rebuilds produce identical section ids.
+  `**Sections:** on` has no effect when fewer than 2 section dividers are present.
 
 **Image visual options** — pipe-separated options after any image visual
 path, combinable:
@@ -411,7 +412,8 @@ path, combinable:
 Applies wherever image visuals are placed: title hero, two-column-split,
 full-image, chart-callout image fallback, and comparison
 `**Visual-Left:** / **Visual-Right:**`. Malformed options warn and are
-ignored.
+ignored. Options are ignored in template mode (a `--check` warning is
+emitted so the outline can be cleaned up before distribution).
 
 **Per-slide tags:**
 - `- Sticker: ILLUSTRATIVE` — small bordered tag top-right (free text,

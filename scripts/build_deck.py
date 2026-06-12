@@ -479,6 +479,10 @@ def validate(slides, ctx, meta=None):
                         f"{where}: {vis_key} has malformed/unknown image "
                         f"option(s) in {spec!r} — supported: alpha=0-100, "
                         "duotone (they will be ignored)")
+                if vis_opts and ctx.get("template_path"):
+                    warnings.append(
+                        f"{where}: image options {list(vis_opts)} on {vis_key} "
+                        "are ignored in template mode")
             if kind == "image" and not resolve_image_path(value, ctx):
                 errors.append(f"{where}: image not found for {vis_key}: '{value}'")
             elif kind == "chart":

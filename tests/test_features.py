@@ -400,6 +400,42 @@ def test_validate_warns_on_malformed_image_option(tmp_path):
     assert any("image option" in w for w in warnings), warnings
 
 
+def test_validate_warns_on_image_opts_in_template_mode(tmp_path):
+    """validate() warns when image opts present and template_path is set."""
+    _make_png(tmp_path / "photo.png")
+    md = ('## Slide 1: Platform spend concentrates in two clouds today\n'
+          '**Layout:** two-column-split\n'
+          '**Visual:** photo.png|alpha=85\n'
+          '- Spend concentrates fast\n'
+          '- Notes: "n"\n')
+    meta, slides = parse_outline(md)
+    # Pass a non-empty template_path string; validate only checks its truthiness
+    ctx = {"outline_dir": tmp_path, "assets_dir": tmp_path,
+           "template_path": str(tmp_path / "fake.pptx")}
+    errors, warnings = validate(slides, ctx, meta)
+    assert not errors, errors
+    assert any("ignored in template mode" in w for w in warnings), warnings
+
+
+def test_malformed_alpha_warns_exactly_once_during_build(tmp_path, capsys):
+    """Malformed alpha emits a single validate-path warning, not a duplicate builder-path one."""
+    _make_png(tmp_path / "photo.png")
+    md = ('## Slide 1: Platform spend concentrates in two clouds today\n'
+          '**Layout:** two-column-split\n'
+          '**Visual:** photo.png|alpha=bad\n'
+          '- Spend concentrates fast\n'
+          '- Notes: "n"\n')
+    outline = tmp_path / "o.md"
+    outline.write_text(md)
+    out = tmp_path / "deck.pptx"
+    build(str(outline), str(out), assets_dir=str(tmp_path))
+    err = capsys.readouterr().err
+    # "alpha" should appear in exactly one warning line
+    alpha_lines = [ln for ln in err.splitlines() if "alpha" in ln.lower()]
+    assert len(alpha_lines) == 1, (
+        f"Expected exactly 1 alpha warning, got {len(alpha_lines)}: {alpha_lines!r}")
+
+
 def test_set_picture_alpha_xml(tmp_path):
     from helpers import set_picture_alpha
     from pptx.oxml.ns import qn

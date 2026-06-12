@@ -241,7 +241,7 @@ def _apply_image_opts(pic, opts, pal):
 
 def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
     """Fill a box with the slide's visual: chart, image, or styled placeholder."""
-    kind, value, opts = parse_visual_opts(p.get("visual", ""))
+    kind, value, opts = parse_visual_opts(p.get("visual", ""), warn_opts=False)
     if kind == "chart" and p.get("data"):
         cats = [d[0] for d in p["data"]]
         series_field = p.get("series", "")
@@ -360,7 +360,7 @@ def build_title_slide(prs, p, pal, ctx):
     add_rect(slide, 0, 0, SLIDE_W, 0.07, pal["accent1"])
 
     has_hero = False
-    kind, value, opts = parse_visual_opts(p.get("visual", ""))
+    kind, value, opts = parse_visual_opts(p.get("visual", ""), warn_opts=False)
     if kind == "image":
         path = resolve_image_path(value, ctx)
         if path:
@@ -581,7 +581,7 @@ def build_comparison_slide(prs, p, pal, ctx):
         add_tb(slide, label, x, 1.7, col_w, 0.6, size=20, bold=True,
                color=pal["accent1"], align=PP_ALIGN.CENTER, font=pal["font_title"])
         if visual:
-            _, v_value, v_opts = parse_visual_opts(visual)
+            _, v_value, v_opts = parse_visual_opts(visual, warn_opts=False)
             path = resolve_image_path(v_value, ctx)
             if path:
                 pic = add_picture_contain(slide, path, x, 2.45, col_w, 4.4,
@@ -643,7 +643,7 @@ def build_table_slide(prs, p, pal, ctx):
 
 def build_full_image_slide(prs, p, pal, ctx):
     slide = _blank_slide(prs, pal, pal["bg_deep"], accent_bar=False)
-    kind, value, opts = parse_visual_opts(p.get("visual", ""))
+    kind, value, opts = parse_visual_opts(p.get("visual", ""), warn_opts=False)
     placed = False
     if kind == "image":
         path = resolve_image_path(value, ctx)
