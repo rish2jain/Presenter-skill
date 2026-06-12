@@ -15,6 +15,9 @@ import builders  # noqa: E402
 @pytest.fixture(autouse=True)
 def _default_density():
     builders.set_density("compact")
+    yield
+    import palettes
+    palettes.set_cjk(False)
 
 
 CTX = {"outline_dir": ROOT / "assets", "assets_dir": ROOT / "assets"}
@@ -436,6 +439,243 @@ def test_tracker_tabs_appendix_keeps_backup_label(tmp_path):
     backup = prs.slides[5]
     assert not _round_chips(backup)
     assert "BACKUP" in _slide_texts(backup)
+
+
+# ── Auto-references slide (T10) ──────────────────────────────────────────────
+SOURCED_MD = """**References:** on
+
+## Slide 1: Costs have outgrown revenue for three years
+- a bullet
+- Source: Gartner 2026
+- Notes: n.
+
+## Slide 2: Plain slide carries no exhibit source
+- b
+- Notes: n.
+
+## Slide 3: Unit costs run 3x the regional baseline
+- c
+- Source: Company filings
+- Notes: n.
+"""
+
+
+def test_references_appends_sources_slide():
+    from build_deck import apply_references
+    meta, slides = parse_outline(SOURCED_MD)
+    out = apply_references(meta, slides)
+    assert len(out) == 4
+    ref = out[-1]
+    assert ref["layout"] == "bullet-list"
+    assert ref["heading"] == "Sources"
+    assert ref["_appendix"] is True
+    assert ref["notes"] == "Auto-generated source register."
+    assert ref["bullets"] == ["Slide 1 — Gartner 2026",
+                              "Slide 3 — Company filings"]
+    errors, _ = validate(out, CTX, meta)
+    assert not errors
+
+
+def test_references_uses_exhibit_numbers_when_exhibits_on():
+    from build_deck import apply_references
+    meta, slides = parse_outline("**Exhibits:** on\n" + SOURCED_MD)
+    out = apply_references(meta, slides)
+    assert out[-1]["bullets"] == ["Exhibit 1 — Gartner 2026",
+                                  "Exhibit 2 — Company filings"]
+
+
+def test_references_dedupes_repeated_sources():
+    from build_deck import apply_references
+    meta, slides = parse_outline(
+        SOURCED_MD.replace("- Source: Company filings",
+                           "- Source: Gartner 2026"))
+    out = apply_references(meta, slides)
+    assert out[-1]["bullets"] == ["Slides 1, 3 — Gartner 2026"]
+
+
+def test_references_off_by_default():
+    from build_deck import apply_references
+    meta, slides = parse_outline(SOURCED_MD.replace("**References:** on\n", ""))
+    assert apply_references(meta, slides) == slides
+
+
+def test_references_on_without_sources_warns(capsys):
+    from build_deck import apply_references
+    meta, slides = parse_outline(
+        "**References:** on\n\n"
+        "## Slide 1: Costs have outgrown revenue for years\n"
+        "- a bullet\n- Notes: n.\n")
+    out = apply_references(meta, slides)
+    assert out == slides
+    assert "no '- Source:'" in capsys.readouterr().err
+
+
+def test_references_numbering_counts_auto_agenda_slides():
+    from build_deck import apply_auto_agenda, apply_references
+    md = "**References:** on\n**Auto-Agenda:** on\n" + TRACKED_MD.replace(
+        "**Auto-Agenda:** track\n", "")
+    md += "- Source: Team analysis\n"
+    meta, slides = parse_outline(md)
+    out = apply_references(meta, apply_auto_agenda(meta, slides))
+    # title, agenda, divider, content, divider, content(sourced) -> slide 6
+    assert out[-1]["bullets"] == ["Slide 6 — Team analysis"]
+
+
+# ── CSV chart data (T10) ─────────────────────────────────────────────────────
+def _csv_outline(tmp_path, csv_text, csv_name="d.csv", extra=""):
+    from build_deck import load_data_files
+    (tmp_path / csv_name).write_text(csv_text, encoding="utf-8")
+    md = (f"## Slide 1: Market grows 32% YoY through 2027\n"
+          f"**Layout:** two-column-split\n"
+          f"**Visual:** chart:bar\n"
+          f"{extra}"
+          f"- Data-File: {csv_name}\n"
+          f"- Notes: n.\n")
+    _, slides = parse_outline(md)
+    ctx = {"outline_dir": tmp_path, "assets_dir": tmp_path / "assets"}
+    errors, warnings = load_data_files(slides, ctx)
+    return slides, errors, warnings
+
+
+def test_data_file_two_column_csv(tmp_path):
+    slides, errors, warnings = _csv_outline(tmp_path, "2024,$42B\n2025,67\n")
+    assert not errors and not warnings
+    assert slides[0]["data"] == [("2024", 42.0), ("2025", 67.0)]
+    errs, _ = validate(slides, {"outline_dir": tmp_path,
+                                "assets_dir": tmp_path / "assets"})
+    assert not errs
+
+
+def test_data_file_two_column_header_skipped(tmp_path):
+    slides, errors, _ = _csv_outline(tmp_path, "label,value\n2024,42\n")
+    assert not errors
+    assert slides[0]["data"] == [("2024", 42.0)]
+
+
+def test_data_file_multi_column_sets_series(tmp_path):
+    slides, errors, _ = _csv_outline(
+        tmp_path, "Quarter,Revenue,Costs\nQ1,4.2,3.1\nQ2,5.1,3.0\n")
+    assert not errors
+    assert slides[0]["series"] == "Revenue, Costs"
+    assert slides[0]["data"] == [("Q1", [4.2, 3.1]), ("Q2", [5.1, 3.0])]
+
+
+def test_data_file_keeps_explicit_series(tmp_path):
+    slides, errors, _ = _csv_outline(
+        tmp_path, "Quarter,Revenue,Costs\nQ1,4.2,3.1\n",
+        extra="**Series:** Rev, Cost\n")
+    assert not errors
+    assert slides[0]["series"] == "Rev, Cost"
+
+
+def test_data_file_missing_is_error(tmp_path):
+    from build_deck import load_data_files
+    _, slides = parse_outline("## Slide 1: T\n- Data-File: nope.csv\n")
+    errors, _ = load_data_files(slides, {"outline_dir": tmp_path,
+                                         "assets_dir": tmp_path / "assets"})
+    assert any("not found" in e for e in errors)
+
+
+def test_data_file_malformed_row_reports_row_number(tmp_path):
+    slides, errors, _ = _csv_outline(tmp_path, "2024,42\n2025,n/a\n")
+    assert any("row 2" in e for e in errors), errors
+
+
+def test_data_file_wins_over_explicit_data(tmp_path):
+    slides, errors, warnings = _csv_outline(
+        tmp_path, "2024,42\n",
+        extra="**Data:**\n- 1999: 7\n")
+    assert not errors
+    assert any("Data-File wins" in w for w in warnings)
+    assert slides[0]["data"] == [("2024", 42.0)]
+
+
+def test_data_file_resolves_from_assets_dir(tmp_path):
+    from build_deck import load_data_files
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "q.csv").write_text("A,1\nB,2\n", encoding="utf-8")
+    _, slides = parse_outline("## Slide 1: T\n- Data-File: q.csv\n")
+    errors, _ = load_data_files(slides, {"outline_dir": tmp_path / "elsewhere",
+                                         "assets_dir": assets})
+    assert not errors
+    assert slides[0]["data"] == [("A", 1.0), ("B", 2.0)]
+
+
+def test_data_file_supports_waterfall_total(tmp_path):
+    slides, errors, _ = _csv_outline(tmp_path, "FY25,46\nTiering,-8\nFY27,total\n")
+    assert not errors
+    assert slides[0]["data"][-1] == ("FY27", "total")
+
+
+# ── CJK font stacks (T10) ────────────────────────────────────────────────────
+def test_deck_has_cjk_detection():
+    from build_deck import deck_has_cjk
+    _, slides = parse_outline("## Slide 1: 中文标题\n- 项目一\n")
+    assert deck_has_cjk(slides)
+    _, slides = parse_outline("## Slide 1: English only heading here\n- bullet\n")
+    assert not deck_has_cjk(slides)
+    _, slides = parse_outline("## Slide 1: Mixed\n- カタカナ bullet\n")
+    assert deck_has_cjk(slides)
+
+
+def test_set_cjk_overlays_palette_fonts(monkeypatch, capsys):
+    import palettes
+    monkeypatch.setitem(palettes._CJK, "font", "Test CJK")
+    monkeypatch.setitem(palettes._CJK, "probed", True)
+    palettes.set_cjk(True)
+    pal = palettes.get_palette("")
+    assert pal["font_title"] == "Test CJK"
+    assert pal["font_body"] == "Test CJK"
+    assert pal["font_label"] == "Test CJK"
+    assert "Test CJK" in capsys.readouterr().err
+    palettes.set_cjk(False)
+    assert palettes.get_palette("")["font_body"] == "Calibri"
+
+
+def test_set_cjk_no_font_keeps_palette_fonts(monkeypatch, capsys):
+    import palettes
+    monkeypatch.setitem(palettes._CJK, "font", None)
+    monkeypatch.setitem(palettes._CJK, "probed", True)
+    palettes.set_cjk(True)
+    assert palettes.get_palette("")["font_body"] == "Calibri"
+    assert "no CJK-safe font" in capsys.readouterr().err
+
+
+def test_build_swaps_fonts_for_cjk_deck(tmp_path, monkeypatch):
+    import palettes
+    from build_deck import build
+    from pptx import Presentation
+    monkeypatch.setitem(palettes._CJK, "font", "Hiragino Sans GB")
+    monkeypatch.setitem(palettes._CJK, "probed", True)
+    md = tmp_path / "o.md"
+    md.write_text("## Slide 1: 三个杠杆在2027财年弥合成本差距\n"
+                  "- 分层定价\n- Notes: n.\n", encoding="utf-8")
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    fonts = {run.font.name for slide in prs.slides for sh in slide.shapes
+             if getattr(sh, "has_text_frame", False)
+             for para in sh.text_frame.paragraphs for run in para.runs}
+    assert "Hiragino Sans GB" in fonts
+
+
+def test_build_keeps_fonts_for_latin_deck(tmp_path, monkeypatch):
+    import palettes
+    from build_deck import build
+    from pptx import Presentation
+    monkeypatch.setitem(palettes._CJK, "font", "Hiragino Sans GB")
+    monkeypatch.setitem(palettes._CJK, "probed", True)
+    md = tmp_path / "o.md"
+    md.write_text("## Slide 1: Costs have outgrown revenue for years\n"
+                  "- a bullet\n- Notes: n.\n", encoding="utf-8")
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    fonts = {run.font.name for slide in prs.slides for sh in slide.shapes
+             if getattr(sh, "has_text_frame", False)
+             for para in sh.text_frame.paragraphs for run in para.runs}
+    assert "Hiragino Sans GB" not in fonts
 
 
 def test_tracker_tabs_skips_auto_agenda_slides(tmp_path):

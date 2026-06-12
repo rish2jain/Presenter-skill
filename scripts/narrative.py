@@ -113,6 +113,8 @@ def check_unsourced_stats(slides):
     """Warn on slides with big numbers but no Source: field or URL in notes."""
     warnings = []
     for n, p in enumerate(slides, 1):
+        if p.get("_auto"):  # synthetic agenda/references slides cite nothing new
+            continue
         blob = " ".join([
             p.get("heading", ""), p.get("title", ""), p.get("notes", ""),
             " ".join(p.get("bullets", [])),

@@ -22,7 +22,8 @@ from builders import LAYOUT_MAP, ctx_blank_layout
 from helpers import (add_speaker_notes, parse_visual, parse_visual_opts,
                      resolve_image_path, warn)
 from narrative import check_unsourced_stats, validate_narrative
-from palettes import PALETTES, apply_variant, get_palette, load_custom_palettes
+from palettes import (PALETTES, apply_variant, get_palette,
+                      load_custom_palettes, set_cjk)
 from smart_layout import auto_layout
 from template_helpers import (find_best_layout, label_placeholder_names,
                               load_template_config, palette_from_theme,
@@ -48,6 +49,7 @@ FIELD_KEYS = {
     "Q1": "q1", "Q2": "q2", "Q3": "q3", "Q4": "q4",
     "Sticker": "sticker", "Kicker": "kicker",
     "Scale": "scale", "Sort": "sort", "Marker": "marker",
+    "Data-File": "data_file",
 }
 
 
@@ -92,7 +94,8 @@ META_KEYS = {"Palette": "palette", "Footer": "footer",
               "Variant": "variant", "Motif": "motif", "Takeaway": "takeaway",
               "Exhibits": "exhibits", "Auto-Agenda": "auto_agenda",
               "Stamp": "stamp", "Scale-Group": "scale_group",
-              "Tracker": "tracker", "Sections": "sections"}
+              "Tracker": "tracker", "Sections": "sections",
+              "References": "references"}
 
 
 def parse_outline(md_text):
@@ -287,6 +290,169 @@ def apply_auto_agenda(meta, slides):
             out.append(_agenda_slide(
                 sections, current=s.get("heading") or s.get("title", "")))
     return out
+
+
+def _references_slide(bullets):
+    return {"bullets": bullets, "stats": [], "cards": [], "items": [],
+            "data": [], "table_rows": [], "steps": [], "tiles": [],
+            "matrix_items": [], "bars": [], "milestones": [],
+            "nodes": [], "left_bullets": [], "right_bullets": [],
+            "layout": "bullet-list", "heading": "Sources",
+            "notes": "Auto-generated source register.",
+            "_appendix": True, "_auto": True}
+
+
+def apply_references(meta, slides):
+    """**References:** on -> append an appendix 'Sources' slide aggregating
+    unique '- Source:' values with their slide (or, with **Exhibits:** on,
+    exhibit) numbers. Call after apply_auto_agenda so numbers match the deck.
+    Default: off; no sources -> warn and no-op."""
+    if meta.get("references", "").lower() not in ("on", "true", "yes"):
+        return slides
+    exhibits_on = meta.get("exhibits", "").lower() in ("on", "true", "yes")
+    refs, exhibit_no = {}, 0  # source -> [numbers], encounter order
+    for i, p in enumerate(slides, 1):
+        if not p.get("source"):
+            continue
+        exhibit_no += 1
+        refs.setdefault(p["source"], []).append(
+            exhibit_no if exhibits_on else i)
+    if not refs:
+        warn("**References:** on but no '- Source:' lines found — "
+             "skipping the Sources slide")
+        return slides
+    noun = "Exhibit" if exhibits_on else "Slide"
+    bullets = [f"{noun}{'s' if len(nums) > 1 else ''} "
+               f"{', '.join(str(n) for n in nums)} — {src}"
+               for src, nums in refs.items()]
+    return slides + [_references_slide(bullets)]
+
+
+# ── CSV chart data (- Data-File:) ────────────────────────────────────────────
+def _resolve_data_file(spec, ctx):
+    """Resolve a Data-File path: outline dir, then assets dir, then as-is."""
+    candidates = [Path(ctx.get("outline_dir", ".")) / spec,
+                  Path(ctx.get("assets_dir", "assets")) / spec, Path(spec)]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
+
+
+def _csv_value(text):
+    """Numeric cell like _parse_data_point ($/,/% stripped); 'total'/'end'
+    pass through for waterfalls; None when unparsable."""
+    t = text.strip()
+    if t.lower() in ("total", "end"):
+        return "total"
+    m = NUM_RE.search(t)
+    return float(m.group().replace(",", "")) if m else None
+
+
+def _parse_csv_rows(rows):
+    """rows = [(row_no, cells), ...] -> (data, series_names|None, errors).
+
+    2 columns: label,value rows (an unparsable first row is treated as a
+    header). 3+ columns: header row gives series names, body rows give
+    per-series value lists."""
+    errors = []
+    if not rows:
+        return [], None, ["no data rows"]
+    width = len(rows[0][1])
+    if width < 2:
+        return [], None, ["needs 2+ columns (label,value)"]
+    bad_width = [str(no) for no, cells in rows if len(cells) != width]
+    if bad_width:
+        return [], None, [f"row {', '.join(bad_width)}: expected {width} "
+                          "columns"]
+    if width == 2:
+        data = []
+        for idx, (no, cells) in enumerate(rows):
+            value = _csv_value(cells[1])
+            if value is None:
+                if idx == 0 and len(rows) > 1:
+                    continue  # header row
+                errors.append(f"row {no}: value {cells[1].strip()!r} "
+                              "is not numeric")
+                continue
+            data.append((cells[0].strip(), value))
+        if not data and not errors:
+            errors.append("no data rows")
+        return data, None, errors
+    series = [c.strip() for c in rows[0][1][1:]]
+    data = []
+    for no, cells in rows[1:]:
+        values = [_csv_value(c) for c in cells[1:]]
+        bad = [cells[1:][i] for i, v in enumerate(values)
+               if not isinstance(v, float)]
+        if bad:
+            errors.append(f"row {no}: non-numeric value(s) "
+                          f"{', '.join(repr(b.strip()) for b in bad)}")
+            continue
+        data.append((cells[0].strip(), values))
+    if not data and not errors:
+        errors.append("no data rows after the header")
+    return data, series, errors
+
+
+def load_data_files(slides, ctx):
+    """Resolve '- Data-File: x.csv' rows into slide['data'] (multi-column
+    headers -> slide['series'] unless already set). Returns (errors,
+    warnings); call right after parse_outline in build and --check paths."""
+    import csv
+    errors, warnings = [], []
+    for n, p in enumerate(slides, 1):
+        spec = p.get("data_file")
+        if not spec:
+            continue
+        where = (f"Slide {n} (line {p['_line']})" if p.get("_line")
+                 else f"Slide {n}")
+        path = _resolve_data_file(spec, ctx)
+        if path is None:
+            errors.append(f"{where}: Data-File not found: '{spec}' "
+                          "(tried outline dir, assets dir, literal path)")
+            continue
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError) as e:
+            errors.append(f"{where}: Data-File '{spec}' unreadable ({e})")
+            continue
+        rows = [(no, cells) for no, cells
+                in enumerate(csv.reader(text.splitlines()), 1)
+                if any(c.strip() for c in cells)]
+        data, series, errs = _parse_csv_rows(rows)
+        if errs:
+            errors.extend(f"{where}: Data-File '{spec}': {e}" for e in errs)
+            continue
+        if p.get("data"):
+            warnings.append(f"{where}: both **Data:** rows and Data-File "
+                            "given — Data-File wins")
+        if series and not p.get("series"):
+            p["series"] = ", ".join(series)
+        p["data"] = data
+    return errors, warnings
+
+
+# ── CJK detection ────────────────────────────────────────────────────────────
+# Han, Hiragana+Katakana, Hangul syllables
+CJK_RE = re.compile(r"[一-鿿぀-ヿ가-힯]")
+
+
+def _text_values(obj):
+    if isinstance(obj, str):
+        yield obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            if not (isinstance(k, str) and k.startswith("_")):
+                yield from _text_values(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _text_values(v)
+
+
+def deck_has_cjk(slides):
+    """Any CJK codepoint in any slide text field -> swap to a CJK font stack."""
+    return any(CJK_RE.search(t) for s in slides for t in _text_values(s))
 
 
 # Chart kinds where sharing one value-axis maximum is meaningful (a value
@@ -1055,8 +1221,11 @@ def build(outline_path, output_path, palette_key=None,
     if palette_key and palette_key not in PALETTES:
         print(f"  [WARN] unknown --palette '{palette_key}' — using default",
               file=sys.stderr)
+    set_cjk(False)  # deck-wide CJK overlay is decided per build, below
     meta, slides_data = parse_outline(outline_path.read_text(encoding="utf-8"))
+    data_errors, data_warnings = load_data_files(slides_data, ctx)
     slides_data = apply_auto_agenda(meta, slides_data)
+    slides_data = apply_references(meta, slides_data)
     slides_data = apply_scale_groups(meta, slides_data)
 
     import builders
@@ -1064,6 +1233,8 @@ def build(outline_path, output_path, palette_key=None,
     palette_key, density = apply_variant(variant_key, palette_key, density)
     builders.set_density(density or meta.get("density", ""))
     errors, warnings = validate(slides_data, ctx, meta)
+    errors = data_errors + errors
+    warnings = data_warnings + warnings
     for w in warnings:
         print(f"  [WARN] {w}", file=sys.stderr)
     if errors:
@@ -1075,6 +1246,9 @@ def build(outline_path, output_path, palette_key=None,
         print(f"Outline OK: {len(slides_data)} slides, "
               f"{len(warnings)} warning(s).")
         return True
+
+    if deck_has_cjk(slides_data):
+        set_cjk(True)  # overlay CJK-safe fonts on every palette this build
 
     # precedence: CLI flag > outline front-matter > variant preset > default
     pal_default = get_palette(palette_key or meta.get("palette", ""))

@@ -53,6 +53,7 @@ Ask ONE clarifying message covering all of the below before starting. Combine in
 4. **Tone** — Bold & dark / Clean & corporate / Warm & editorial / Technical & minimal
 5. **User images** — Has the user shared any images? If yes, ask which slides to place them on (see `references/image-handling.md`).
 6. **Template** — Has the user provided a .pptx template file? If yes, switch to Mode B.
+7. **Source documents** — Users may supply PDF/docx/xlsx/CSV source documents to draft the outline from; CSV files can also feed charts directly via `- Data-File: path.csv`.
 
 After gathering answers, research the topic if needed using available tools.
 

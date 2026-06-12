@@ -398,6 +398,35 @@ both are present.
   slides → "Backup". Default on at 2+ dividers, off below; styled builds
   only (skipped in template mode). Rebuilds produce identical section ids.
   `**Sections:** on` has no effect when fewer than 2 section dividers are present.
+- `**References:** on` — appends an auto-generated "Sources" backup slide
+  (appendix-flagged bullet list) aggregating every unique `- Source:` value
+  with its slide numbers — or exhibit numbers when `**Exhibits:** on` —
+  e.g. "Slides 4, 7 — Gartner 2026". Default off; with no sources the
+  slide is skipped with a warning.
+
+**CSV chart data** — `- Data-File: data/q3.csv` loads a chart's
+`**Data:**` block from a CSV (resolved against the outline dir, then the
+assets dir, then as given). Two columns = `label,value` rows (optional
+header row tolerated; `total`/`end` values work for waterfalls);
+3+ columns require a header row — first column is labels, remaining
+headers become `**Series:**` names (unless `**Series:**` is set
+explicitly). `$`, `,`, `%` are stripped like inline data. Missing files
+and malformed rows are `--check` errors; when both `**Data:**` rows and
+`- Data-File:` are present, the file wins (with a warning).
+
+**Handout / pre-read** — `python3 scripts/gen_handout.py outline.md
+[--output handout.md]` (default `<outline>-handout.md`) renders the
+outline as a readable markdown pre-read: deck title as H1, one `## N.
+<action title>` section per slide (auto-agenda slides skipped, appendix
+slides under a `# Appendix` divider), bullets, data/table blocks as
+markdown tables, `> Talk track:` blockquotes from speaker notes, and
+`*Source: ...*` attributions.
+
+**CJK font stacks** — when any slide text contains CJK codepoints
+(Chinese/Japanese/Korean), the build swaps all palette fonts to the first
+available of PingFang SC / Hiragino Sans GB / Noto Sans CJK SC /
+Microsoft YaHei (deck-wide, warned once); if none is found the palette
+fonts are kept and PowerPoint's own substitution applies.
 
 **Image visual options** — pipe-separated options after any image visual
 path, combinable:

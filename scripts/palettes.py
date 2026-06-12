@@ -184,5 +184,51 @@ def hex_rgb(h):
     return RGBColor(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
+# ── CJK font overlay ─────────────────────────────────────────────────────────
+# Deck-wide swap when the outline contains CJK text (build() decides via
+# set_cjk); the chosen font replaces font_title/font_body/font_label so
+# headings and body render without tofu boxes.
+CJK_FONT_STACK = ("PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+                  "Microsoft YaHei")
+_CJK = {"on": False, "font": None, "probed": False}
+
+
+def _pick_cjk_font():
+    """First available font from CJK_FONT_STACK (matplotlib font index when
+    importable, else a platform guess). Returns None when none is found."""
+    try:
+        from matplotlib import font_manager
+    except ImportError:
+        import sys
+        return "PingFang SC" if sys.platform == "darwin" else "Noto Sans CJK SC"
+    names = {f.name for f in font_manager.fontManager.ttflist}
+    for name in CJK_FONT_STACK:
+        if name in names:
+            return name
+    return None
+
+
+def set_cjk(on):
+    """Toggle the deck-wide CJK font overlay (reset to False per build)."""
+    import sys
+    _CJK["on"] = bool(on)
+    if not on:
+        return
+    if not _CJK["probed"]:
+        _CJK["font"] = _pick_cjk_font()
+        _CJK["probed"] = True
+    if _CJK["font"]:
+        print(f"  [WARN] CJK text detected — using '{_CJK['font']}' for "
+              "titles, body, and labels", file=sys.stderr)
+    else:
+        print("  [WARN] CJK text detected but no CJK-safe font found "
+              f"(looked for: {', '.join(CJK_FONT_STACK)}) — keeping palette "
+              "fonts", file=sys.stderr)
+
+
 def get_palette(key):
-    return PALETTES.get(key, PALETTES[DEFAULT_PALETTE])
+    pal = PALETTES.get(key, PALETTES[DEFAULT_PALETTE])
+    if _CJK["on"] and _CJK["font"]:
+        pal = {**pal, "font_title": _CJK["font"], "font_body": _CJK["font"],
+               "font_label": _CJK["font"]}
+    return pal

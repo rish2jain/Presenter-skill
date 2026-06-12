@@ -194,7 +194,7 @@ Files: `scripts/helpers.py`, `scripts/builders.py` (table builder), new logic in
   `horz_banding=True` on the `a:tbl` properties so accessibility checkers see a marked
   header row (visual styling stays custom).
 
-## T10. Pipeline outputs: references slide, handout, CSV data, CJK stacks — `[ ]`
+## T10. Pipeline outputs: references slide, handout, CSV data, CJK stacks — `[x]`
 
 Files: `scripts/build_deck.py`, new `scripts/gen_handout.py`, `scripts/palettes.py`
 (CJK), `references/generation-guide.md`, `SKILL.md` (Phase 1 doc-to-deck note),
