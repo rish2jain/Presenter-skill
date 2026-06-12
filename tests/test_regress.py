@@ -146,11 +146,51 @@ def test_fallback_hash_same_verdicts(tmp_path, monkeypatch):
     assert visual_regress.main([str(base), str(cur)]) == 1
 
 
-def test_local_ahash_unit():
-    a = visual_regress._ahash.__doc__  # exists
-    assert a is not None
+def test_local_ahash_unit(tmp_path):
+    """_ahash on two identical images → distance 0; image with a large black
+    rectangle → distance > 5 (a detectable structural difference)."""
+    assert visual_regress._ahash.__doc__ is not None
     assert visual_regress._hamming(0b1010, 0b1010) == 0
     assert visual_regress._hamming(0b1010, 0b0101) == 4
+
+    # Identical images hash to the same value → distance 0.
+    img_a = tmp_path / "a.png"
+    img_b = tmp_path / "b.png"
+    _png(img_a, color=(24, 40, 96))
+    _png(img_b, color=(24, 40, 96))
+    ha = visual_regress._ahash(img_a)
+    hb = visual_regress._ahash(img_b)
+    assert visual_regress._hamming(ha, hb) == 0
+
+    # Image with a big black rectangle differs detectably.
+    img_c = tmp_path / "c.png"
+    _png(img_c, color=(24, 40, 96), rect=(10, 10, 250, 150))
+    hc = visual_regress._ahash(img_c)
+    assert visual_regress._hamming(ha, hc) > 5
+
+
+def test_imagehash_phash_branch(tmp_path, monkeypatch):
+    """Stub imagehash module exercising the pHash branch of _hashers."""
+    import types
+
+    class _FakeHash:
+        def __init__(self, value):
+            self._value = value
+        def __sub__(self, other):
+            return bin(self._value ^ other._value).count("1")
+
+    fake_imagehash = types.ModuleType("imagehash")
+    fake_imagehash.phash = lambda img: _FakeHash(0xDEADBEEF)
+    monkeypatch.setitem(sys.modules, "imagehash", fake_imagehash)
+
+    # _hashers() should pick pHash when imagehash is importable.
+    hash_fn, dist_fn, label = visual_regress._hashers()
+    assert label == "phash"
+
+    img = tmp_path / "slide-01.png"
+    _png(img)
+    h = hash_fn(img)
+    assert dist_fn(h, h) == 0
 
 
 # ------------------------------------------------- qa_check.py --integrity
@@ -235,3 +275,54 @@ def test_integrity_module_unknown_api_skips_without_failing(
     with pytest.raises(SystemExit) as exc:
         qa_check.main()
     assert exc.value.code == 0
+
+
+def test_bless_across_padding_change_converges(tmp_path):
+    """--update when baseline has slide-1.png but current has slide-01.png
+    (padding change): after bless the stale slide-1.png is removed, only
+    slide-01.png survives, and a subsequent plain compare exits 0."""
+    base = tmp_path / "baseline"
+    cur = tmp_path / "current"
+    # baseline has the un-padded name (old pdftoppm output)
+    _png(base / "slide-1.png", color=(200, 100, 50))
+    # current has the zero-padded name (new pdftoppm output) with different content
+    _png(cur / "slide-01.png", color=(50, 100, 200))
+
+    rc = visual_regress.main([str(base), str(cur), "--update"])
+    assert rc == 0
+
+    # Only slide-01.png should remain in baseline; slide-1.png must be gone.
+    baseline_files = list(base.glob("*.png"))
+    assert len(baseline_files) == 1
+    assert baseline_files[0].name == "slide-01.png"
+
+    # Subsequent plain compare must be clean.
+    rc = visual_regress.main([str(base), str(cur)])
+    assert rc == 0
+
+
+def test_integrity_module_raises_falls_back_no_traceback(
+        tmp_path, monkeypatch, capsys):
+    """A module whose validate() raises must not propagate a traceback; the
+    WARN path is taken and the CLI/skip fallback proceeds (exit 0 when CLI
+    also absent)."""
+    deck = _deck(tmp_path)
+
+    def _raise(path):
+        raise RuntimeError("simulated internal error")
+
+    fake = types.ModuleType("openxml_audit")
+    fake.validate = _raise
+    monkeypatch.setitem(sys.modules, "openxml_audit", fake)
+    monkeypatch.setattr(qa_check.shutil, "which", lambda name: None)
+    monkeypatch.setattr(sys, "argv", ["qa_check.py", str(deck), "--integrity"])
+
+    # Must not raise — the exception must be swallowed inside _integrity_via_module.
+    with pytest.raises(SystemExit) as exc:
+        qa_check.main()
+    assert exc.value.code == 0
+
+    captured = capsys.readouterr()
+    # The WARN line should appear on stderr.
+    assert "WARN" in captured.err
+    assert "module call failed" in captured.err

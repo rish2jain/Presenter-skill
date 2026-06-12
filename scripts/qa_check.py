@@ -389,7 +389,12 @@ def _integrity_via_module(mod, pptx_path):
               "validate/audit/check entry point — integrity check skipped",
               file=sys.stderr)
         return None
-    result = fn(str(pptx_path))
+    try:
+        result = fn(str(pptx_path))
+    except Exception as exc:
+        print(f"  [WARN] openxml-audit module call failed ({exc}); "
+              "falling back to CLI/skip", file=sys.stderr)
+        return None
     return [str(item) for item in result] if result else []
 
 

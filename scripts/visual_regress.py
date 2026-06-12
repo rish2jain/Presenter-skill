@@ -41,7 +41,12 @@ STATUS_LABEL = {
 
 
 def _ahash(path):
-    """Pillow-only 8x8 average hash: grayscale, resize, threshold by mean."""
+    """Pillow-only 8x8 average hash: grayscale, resize, threshold by mean.
+
+    Note: uniform images (solid colour, blank slide) hash to 0 because every
+    pixel equals the mean, so none exceeds it — this is a known average-hash
+    limitation and not a bug.
+    """
     from PIL import Image
     img = Image.open(path).convert("L").resize((8, 8), Image.LANCZOS)
     pixels = list(img.getdata())
@@ -136,7 +141,7 @@ def bless(current_dir, baseline_dir):
     baseline_dir.mkdir(parents=True, exist_ok=True)
     cur = collect(current_dir)
     for key, stale in collect(baseline_dir).items():
-        if key not in cur:
+        if key not in cur or stale.name != cur[key].name:
             stale.unlink()
     for path in cur.values():
         shutil.copy2(path, baseline_dir / path.name)
