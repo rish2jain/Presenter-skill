@@ -250,3 +250,100 @@ def test_main_rejects_unsafe_name(tmp_path, monkeypatch):
     with pytest.raises(SystemExit) as ei:
         brand_kit.main()
     assert ei.value.code == 2
+
+
+# ── Float-space contrast nudging ─────────────────────────────────────────────
+
+def test_lighten_reaches_255_via_float_state():
+    """_nudge must escape the integer stall that occurs when each step is
+    rounded immediately.  Verify by targeting an impossible ratio that forces
+    all 50 float-space steps: the final colour must be brighter than (246,246,246)
+    (i.e. the nudge actually moved) even though integer-rounded lighten() alone
+    would stall there."""
+    start = (246, 246, 246)
+    # _nudge with toward_light=True and a very high target runs all 50 steps;
+    # the returned colour must be lighter than the integer-stalled value.
+    result = brand_kit._nudge(
+        start,
+        [(start, 21.0)],   # 21:1 is unreachable; forces all steps to run
+        toward_light=True,
+        role="test_lighten",
+        bg_label="bg",
+    )
+    # Float accumulation must have pushed at least one channel past 246
+    assert max(result) > 246, (
+        f"nudge stalled at {result}; float accumulation is not working"
+    )
+
+
+def test_repro_gray_bg_text_meets_contrast():
+    """assemble_palette([((108,108,108),10), ((200,60,60),4)]) — text on
+    surface must reach ≥4.5:1 after float-space nudging."""
+    pal = brand_kit.assemble_palette([((108, 108, 108), 10), ((200, 60, 60), 4)])
+    bg = _rgb(pal["bg"])
+    surface = _rgb(pal["surface"])
+    text = _rgb(pal["text"])
+    assert contrast_ratio(text, bg) >= 4.5, (
+        f"text vs bg = {contrast_ratio(text, bg):.2f}:1")
+    assert contrast_ratio(text, surface) >= 4.5, (
+        f"text vs surface = {contrast_ratio(text, surface):.2f}:1")
+
+
+def test_repro_green_bg_text_meets_contrast():
+    """assemble_palette with bg (40,123,40) — text on surface must reach
+    ≥4.5:1 after float-space nudging."""
+    pal = brand_kit.assemble_palette([((40, 123, 40), 10), ((200, 60, 60), 4)])
+    bg = _rgb(pal["bg"])
+    surface = _rgb(pal["surface"])
+    text = _rgb(pal["text"])
+    assert contrast_ratio(text, bg) >= 4.5, (
+        f"text vs bg = {contrast_ratio(text, bg):.2f}:1")
+    assert contrast_ratio(text, surface) >= 4.5, (
+        f"text vs surface = {contrast_ratio(text, surface):.2f}:1")
+
+
+def test_nudge_warn_on_impossible_target(capsys):
+    """When the contrast target genuinely cannot be reached in 50 steps,
+    a [WARN] line is emitted to stderr and the function still returns (exit 0
+    is preserved — the palette is written)."""
+    # Force an impossible scenario: text = white (255,255,255), bg = white
+    # (ratio = 1.0:1, target 4.5) — there is nowhere to nudge toward_light.
+    # We use a very high target ratio so it definitely can't be met.
+    impossible_bg = (255, 255, 255)
+    result = brand_kit._nudge(
+        (254, 254, 254),
+        [(impossible_bg, 21.0)],   # 21:1 is beyond maximum possible WCAG ratio
+        toward_light=True,
+        role="text",
+        bg_label="bg",
+    )
+    captured = capsys.readouterr()
+    assert "[WARN] contrast target missed:" in captured.err
+    assert "text" in captured.err
+    assert isinstance(result, tuple) and len(result) == 3
+
+
+# ── Brandfetch malformed-shape crash guard ───────────────────────────────────
+
+def test_brandfetch_malformed_colors_list_falls_back_to_scrape(
+        tmp_path, monkeypatch):
+    """When Brandfetch returns colors as a list of plain strings (AttributeError
+    on .get()), the run() pipeline must fall back to CSS scrape without raising."""
+    malformed_json = {
+        "name": "BadCo",
+        "colors": ["#FF0000", "#00FF00"],   # strings, not dicts → AttributeError
+        "fonts": [],
+        "logos": [],
+    }
+    monkeypatch.setenv("BRANDFETCH_API_KEY", "testkey")
+    fake = FakeHTTP({
+        API_URL: json.dumps(malformed_json),
+        HOME_URL: FIXTURE_HTML,
+        CSS_URL: FIXTURE_CSS,
+    })
+    monkeypatch.setattr(brand_kit, "_http_get", fake)
+    # Must not raise; falls back to scrape and succeeds
+    assert brand_kit.run("acme.test", "bkmalformed", tmp_path) == 0
+    pal = json.loads((tmp_path / "palettes" / "bkmalformed.json").read_text())
+    # Scrape result, not Brandfetch
+    assert pal["_source"] == HOME_URL

@@ -522,7 +522,7 @@ font names, logo → `<assets>/brand/acme-logo.png`); otherwise scrapes the
 homepage plus linked same-origin CSS for hex/rgb() colors ranked by
 frequency. Colors are classified into the nine palette keys (most-frequent
 very-dark vs very-light color decides the theme; saturated candidates
-become accents) with a contrast guarantee — text ≥ 4.5:1 on bg/surface,
-accents ≥ 3.0:1 on bg. The result is validated through the custom-palette
+become accents) with contrast-checked nudging — text ≥ 4.5:1 on bg/surface,
+accents ≥ 3.0:1 on bg (warns when a target can't be met). The result is validated through the custom-palette
 loader before `<assets>/palettes/acme.json` is written, and a swatch table
 (role, hex, contrast vs bg) is printed. Then build with `--palette acme`.

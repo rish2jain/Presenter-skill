@@ -9,9 +9,9 @@ Usage:
 Source 1: Brandfetch API when BRANDFETCH_API_KEY is set (colors, fonts, logo).
 Source 2 (fallback): homepage HTML + linked same-origin CSS scrape — hex/rgb()
 colors ranked by frequency. Either way the colors are classified into the nine
-required palette keys (contrast-guaranteed: text 4.5:1, accents 3.0:1 on bg),
-validated through palettes.load_custom_palettes, and written to
-<assets>/palettes/<name>.json. Logo (Brandfetch only) lands at
+required palette keys (contrast-checked: text 4.5:1, accents 3.0:1 on bg —
+warns when a target can't be met), validated through palettes.load_custom_palettes,
+and written to <assets>/palettes/<name>.json. Logo (Brandfetch only) lands at
 <assets>/brand/<name>-logo.png. Build with `--palette <name>` afterwards.
 """
 import argparse
@@ -67,12 +67,27 @@ def _sat(rgb):
     return colorsys.rgb_to_hsv(*(c / 255 for c in rgb))[1]
 
 
+def _lighten_f(rgb_f, f):
+    """Float-internal lighten: each channel moves fraction f toward 255."""
+    return tuple(c + (255 - c) * f for c in rgb_f)
+
+
+def _darken_f(rgb_f, f):
+    """Float-internal darken: each channel scaled by (1-f)."""
+    return tuple(c * (1 - f) for c in rgb_f)
+
+
+def _f2rgb(rgb_f):
+    """Round float triple to int RGB, clamping to [0, 255]."""
+    return tuple(max(0, min(255, round(c))) for c in rgb_f)
+
+
 def lighten(rgb, f):
-    return tuple(round(c + (255 - c) * f) for c in rgb)
+    return _f2rgb(_lighten_f(rgb, f))
 
 
 def darken(rgb, f):
-    return tuple(round(c * (1 - f)) for c in rgb)
+    return _f2rgb(_darken_f(rgb, f))
 
 
 def blend(a, b, f):
@@ -86,14 +101,31 @@ def rotate_hue(rgb, deg):
     return (round(r * 255), round(g * 255), round(b * 255))
 
 
-def _nudge(rgb, targets, toward_light):
-    """Step lightness ±5% (max 10 steps) until rgb clears every
-    (other_color, min_ratio) contrast target."""
-    for _ in range(10):
-        if all(contrast_ratio(rgb, other) >= ratio for other, ratio in targets):
-            break
-        rgb = lighten(rgb, 0.05) if toward_light else darken(rgb, 0.05)
-    return rgb
+def _nudge(rgb, targets, toward_light, role="", bg_label=""):
+    """Step lightness ±5% in float space (max 50 steps) until rgb clears every
+    (other_color, min_ratio) contrast target.  If the loop exhausts its steps
+    without meeting every target a [WARN] line is printed to stderr for each
+    miss, but the best-effort colour is still returned (exit 0)."""
+    rgb_f = tuple(float(c) for c in rgb)
+    step_fn = _lighten_f if toward_light else _darken_f
+    for _ in range(50):
+        candidate = _f2rgb(rgb_f)
+        if all(contrast_ratio(candidate, other) >= ratio
+               for other, ratio in targets):
+            return candidate
+        rgb_f = step_fn(rgb_f, 0.05)
+    # Loop exhausted — report each miss individually
+    final = _f2rgb(rgb_f)
+    for other, ratio in targets:
+        actual = contrast_ratio(final, other)
+        if actual < ratio:
+            label = bg_label or "bg"
+            print(
+                f"[WARN] contrast target missed: {role} on {label}"
+                f" = {actual:.2f}:1 (target {ratio})",
+                file=sys.stderr,
+            )
+    return final
 
 
 # ── Color extraction + dedupe (pure) ─────────────────────────────────────────
@@ -168,9 +200,15 @@ def assemble_palette(candidates):
         accents.append(rotate_hue(accents[0], 30 if len(accents) == 1 else -30))
 
     text = (244, 246, 250) if dark else (17, 24, 39)
-    text = _nudge(text, [(bg, 4.5), (surface, 4.5)], toward_light=dark)
-    muted = _nudge(blend(text, bg, 0.35), [(bg, 4.5)], toward_light=dark)
-    accents = [_nudge(a, [(bg, 3.0)], toward_light=dark) for a in accents]
+    text = _nudge(text, [(bg, 4.5), (surface, 4.5)], toward_light=dark,
+                  role="text", bg_label="bg/surface")
+    muted = _nudge(blend(text, bg, 0.35), [(bg, 4.5)], toward_light=dark,
+                   role="text_muted", bg_label="bg")
+    accents = [
+        _nudge(a, [(bg, 3.0)], toward_light=dark,
+               role=f"accent{i + 1}", bg_label="bg")
+        for i, a in enumerate(accents)
+    ]
     return {
         "bg": _hex6(bg), "bg_deep": _hex6(bg_deep), "surface": _hex6(surface),
         "accent1": _hex6(accents[0]), "accent2": _hex6(accents[1]),
@@ -300,7 +338,7 @@ def run(target, name, assets_dir):
         try:
             candidates, fonts, logo_url = fetch_brandfetch(domain, api_key)
             source = "brandfetch"
-        except (OSError, ValueError, KeyError, TypeError) as e:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
             print(f"  [WARN] Brandfetch lookup failed ({e}) — falling back "
                   "to CSS scrape", file=sys.stderr)
             candidates = None
