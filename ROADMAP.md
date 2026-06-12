@@ -174,7 +174,7 @@ Files: `scripts/builders.py` (or new `scripts/textfit.py`), `scripts/build_deck.
   computing fontScale to fit, floor 80% (i.e. 16pt→12.8pt min). Below floor → keep the
   validation warning ("split the slide").
 
-## T9. OOXML wraps: image transparency/duotone, sections, table banding — `[ ]`
+## T9. OOXML wraps: image transparency/duotone, sections, table banding — `[x]`
 
 Files: `scripts/helpers.py`, `scripts/builders.py` (table builder), new logic in
 `scripts/build_deck.py` (sections), `references/generation-guide.md`,
@@ -188,7 +188,7 @@ Files: `scripts/helpers.py`, `scripts/builders.py` (table builder), new logic in
 - **Slide sections (`p14:sectionLst`).** After build, when the deck has section-divider
   slides, inject PowerPoint sections named after each divider (first section "Opening"
   for pre-divider slides; appendix slides → "Backup" section). Deterministic GUIDs
-  derived from md5(section name + index) so rebuilds are stable. Behind meta
+  derived from uuid5(section index + name) so rebuilds are stable. Behind meta
   `**Sections:** on` (default on when ≥2 dividers; `off` disables).
 - **Native table banding.** In the table builder, set `firstRow=True` and
   `horz_banding=True` on the `a:tbl` properties so accessibility checkers see a marked

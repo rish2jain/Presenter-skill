@@ -391,6 +391,27 @@ both are present.
   outgrow its budget, slides get a compact "n/N · Section" text instead
   (one build warning). Auto-inserted agenda slides and appendix slides
   (BACKUP) keep their existing labels. Compatible with `**Auto-Agenda:**`.
+- `**Sections:** off` — disable native PowerPoint sections. With 2+
+  section dividers the build injects real sections (collapsible in
+  PowerPoint's slide sorter / thumbnail pane): pre-divider slides →
+  "Opening", each divider starts a section named by its heading, appendix
+  slides → "Backup". Default on at 2+ dividers, off below; styled builds
+  only (skipped in template mode). Rebuilds produce identical section ids.
+
+**Image visual options** — pipe-separated options after any image visual
+path, combinable:
+
+    **Visual:** user-image:hero.png|alpha=85|duotone
+
+- `alpha=N` — picture opacity N% (0–100), written as native
+  `a:alphaModFix` (stays editable in PowerPoint).
+- `duotone` — brand-tint the photo with a palette duotone
+  (bg → accent1), the standard trick for unifying mixed stock photos.
+
+Applies wherever image visuals are placed: title hero, two-column-split,
+full-image, chart-callout image fallback, and comparison
+`**Visual-Left:** / **Visual-Right:**`. Malformed options warn and are
+ignored.
 
 **Per-slide tags:**
 - `- Sticker: ILLUSTRATIVE` — small bordered tag top-right (free text,

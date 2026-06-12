@@ -14,7 +14,8 @@ from pptx.util import Inches, Pt
 
 from charts import add_native_chart
 from helpers import (_add_filled_shape, add_picture_cover, add_soft_shadow,
-                     parse_visual, resolve_image_path, set_fill_alpha,
+                     parse_visual, parse_visual_opts, resolve_image_path,
+                     set_fill_alpha, set_picture_alpha, set_picture_duotone,
                      set_slide_bg_gradient, warn)
 from helpers import add_circle as _add_circle
 from helpers import add_overlay as _add_overlay
@@ -228,9 +229,19 @@ def _heading(slide, p, pal, w=11.9, size=32, align=PP_ALIGN.LEFT):
            font=pal["font_title"], align=align)
 
 
+def _apply_image_opts(pic, opts, pal):
+    """Apply parsed visual options (duotone / alpha) to a placed picture."""
+    if not opts:
+        return
+    if opts.get("duotone"):
+        set_picture_duotone(pic, pal["bg"], pal["accent1"])
+    if "alpha" in opts:
+        set_picture_alpha(pic, opts["alpha"])
+
+
 def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
     """Fill a box with the slide's visual: chart, image, or styled placeholder."""
-    kind, value = parse_visual(p.get("visual", ""))
+    kind, value, opts = parse_visual_opts(p.get("visual", ""))
     if kind == "chart" and p.get("data"):
         cats = [d[0] for d in p["data"]]
         series_field = p.get("series", "")
@@ -294,8 +305,9 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
     if kind == "image":
         path = resolve_image_path(value, ctx)
         if path:
-            add_picture_contain(slide, path, left, top, w, h,
-                                alt=p.get("caption") or p.get("heading"))
+            pic = add_picture_contain(slide, path, left, top, w, h,
+                                      alt=p.get("caption") or p.get("heading"))
+            _apply_image_opts(pic, opts, pal)
             return
         warn(f"Image not found: {value}")
     _visual_placeholder(slide, pal, left, top, w, h)
@@ -348,12 +360,13 @@ def build_title_slide(prs, p, pal, ctx):
     add_rect(slide, 0, 0, SLIDE_W, 0.07, pal["accent1"])
 
     has_hero = False
-    kind, value = parse_visual(p.get("visual", ""))
+    kind, value, opts = parse_visual_opts(p.get("visual", ""))
     if kind == "image":
         path = resolve_image_path(value, ctx)
         if path:
-            add_picture_contain(slide, path, 9.3, 1.4, 3.4, 4.7,
-                                alt=_slide_title(p, "hero image"))
+            pic = add_picture_contain(slide, path, 9.3, 1.4, 3.4, 4.7,
+                                      alt=_slide_title(p, "hero image"))
+            _apply_image_opts(pic, opts, pal)
             has_hero = True
 
     title_w = 8.2 if has_hero else 11.7
@@ -568,9 +581,12 @@ def build_comparison_slide(prs, p, pal, ctx):
         add_tb(slide, label, x, 1.7, col_w, 0.6, size=20, bold=True,
                color=pal["accent1"], align=PP_ALIGN.CENTER, font=pal["font_title"])
         if visual:
-            path = resolve_image_path(visual, ctx)
+            _, v_value, v_opts = parse_visual_opts(visual)
+            path = resolve_image_path(v_value, ctx)
             if path:
-                add_picture_contain(slide, path, x, 2.45, col_w, 4.4, alt=label)
+                pic = add_picture_contain(slide, path, x, 2.45, col_w, 4.4,
+                                          alt=label)
+                _apply_image_opts(pic, v_opts, pal)
                 continue
             warn(f"Comparison image not found: {visual}")
         if bullets:
@@ -601,6 +617,11 @@ def build_table_slide(prs, p, pal, ctx):
     frame = slide.shapes.add_table(n_rows, n_cols, Inches(tl), Inches(tt),
                                    Inches(tw), Inches(th))
     table = frame.table
+    # Accessibility: mark the header row and row banding on a:tblPr so
+    # checkers (and qa_check --accessibility) see them; visual styling
+    # below stays custom.
+    table.first_row = True
+    table.horz_banding = True
     for r, row in enumerate(rows):
         for c in range(n_cols):
             cell = table.cell(r, c)
@@ -622,13 +643,14 @@ def build_table_slide(prs, p, pal, ctx):
 
 def build_full_image_slide(prs, p, pal, ctx):
     slide = _blank_slide(prs, pal, pal["bg_deep"], accent_bar=False)
-    kind, value = parse_visual(p.get("visual", ""))
+    kind, value, opts = parse_visual_opts(p.get("visual", ""))
     placed = False
     if kind == "image":
         path = resolve_image_path(value, ctx)
         if path:
-            add_picture_cover(slide, prs, path,
-                              alt=p.get("caption", "full-bleed image"))
+            pic = add_picture_cover(slide, prs, path,
+                                    alt=p.get("caption", "full-bleed image"))
+            _apply_image_opts(pic, opts, pal)
             placed = True
         else:
             warn(f"Full-image visual not found: {value}")

@@ -19,7 +19,8 @@ from pptx import Presentation
 from pptx.util import Inches
 
 from builders import LAYOUT_MAP, ctx_blank_layout
-from helpers import add_speaker_notes, parse_visual, resolve_image_path, warn
+from helpers import (add_speaker_notes, parse_visual, parse_visual_opts,
+                     resolve_image_path, warn)
 from narrative import check_unsourced_stats, validate_narrative
 from palettes import PALETTES, apply_variant, get_palette, load_custom_palettes
 from smart_layout import auto_layout
@@ -91,7 +92,7 @@ META_KEYS = {"Palette": "palette", "Footer": "footer",
               "Variant": "variant", "Motif": "motif", "Takeaway": "takeaway",
               "Exhibits": "exhibits", "Auto-Agenda": "auto_agenda",
               "Stamp": "stamp", "Scale-Group": "scale_group",
-              "Tracker": "tracker"}
+              "Tracker": "tracker", "Sections": "sections"}
 
 
 def parse_outline(md_text):
@@ -467,9 +468,17 @@ def validate(slides, ctx, meta=None):
                             "default will be used")
 
         for vis_key in ("visual", "visual_left", "visual_right"):
-            kind, value = parse_visual(p.get(vis_key, ""))
+            spec = p.get(vis_key, "")
+            kind, value, vis_opts = parse_visual_opts(spec, warn_opts=False)
             if not kind:
                 continue
+            if kind == "image":
+                given = [s for s in spec.split("|")[1:] if s.strip()]
+                if len(vis_opts) < len(given):
+                    warnings.append(
+                        f"{where}: {vis_key} has malformed/unknown image "
+                        f"option(s) in {spec!r} — supported: alpha=0-100, "
+                        "duotone (they will be ignored)")
             if kind == "image" and not resolve_image_path(value, ctx):
                 errors.append(f"{where}: image not found for {vis_key}: '{value}'")
             elif kind == "chart":
@@ -811,6 +820,83 @@ def build_template_slide(prs, p, layout_name, ctx, config=None):
     return slide
 
 
+# ── PowerPoint sections (p14:sectionLst) ─────────────────────────────────────
+P14_NS = "http://schemas.microsoft.com/office/powerpoint/2010/main"
+SECTIONLST_EXT_URI = "{521415D9-36F7-43E2-AB2F-B90AF26B5E84}"
+
+
+def _section_plan(slides_data):
+    """Group slide indices into ordered, named sections.
+
+    Pre-divider slides -> 'Opening'; each non-appendix section-divider starts
+    a section named by its heading; appendix slides -> 'Backup'.
+    Returns [(name, [slide_index, ...]), ...] with empty groups dropped.
+    """
+    plan = [["Opening", []]]
+    for i, p in enumerate(slides_data):
+        if p.get("_appendix"):
+            if plan[-1][0] != "Backup":
+                plan.append(["Backup", []])
+        elif p.get("layout") == "section-divider":
+            plan.append([p.get("heading") or p.get("title") or "Section", []])
+        plan[-1][1].append(i)
+    return [(name, idxs) for name, idxs in plan if idxs]
+
+
+def inject_sections(prs, slides_data, meta):
+    """Inject PowerPoint sections into presentation.xml (p14:sectionLst).
+
+    Default on when the deck has 2+ non-appendix section dividers;
+    `**Sections:** off` disables. Non-template builds only: built slides
+    must correspond 1:1 to slides_data for the slide-id grouping to hold.
+    Deterministic section GUIDs (uuid5 of index+name) keep rebuilds stable.
+    Returns the section names injected, or None when skipped.
+    """
+    import uuid
+
+    from lxml import etree
+    from pptx.oxml.ns import qn
+
+    mode = meta.get("sections", "").lower()
+    if mode == "off":
+        return None
+    if mode not in ("", "on"):
+        warn(f"unknown **Sections:** value {meta['sections']!r} — "
+             "expected on|off; using default")
+    dividers = [p for p in slides_data
+                if p.get("layout") == "section-divider"
+                and not p.get("_appendix")]
+    if len(dividers) < 2:
+        return None
+    slide_ids = [s.get("id") for s in prs.slides._sldIdLst]
+    if len(slide_ids) != len(slides_data):
+        warn("sections skipped: built slides do not match the outline 1:1")
+        return None
+
+    p14 = "{%s}" % P14_NS
+    section_lst = etree.Element(p14 + "sectionLst", nsmap={"p14": P14_NS})
+    plan = _section_plan(slides_data)
+    for index, (name, idxs) in enumerate(plan):
+        guid = uuid.uuid5(uuid.NAMESPACE_URL, f"deck-section-{index}-{name}")
+        section = etree.SubElement(section_lst, p14 + "section")
+        section.set("name", name)
+        section.set("id", "{%s}" % str(guid).upper())
+        sld_id_lst = etree.SubElement(section, p14 + "sldIdLst")
+        for i in idxs:
+            etree.SubElement(sld_id_lst, p14 + "sldId").set(
+                "id", str(slide_ids[i]))
+
+    ext = etree.Element(qn("p:ext"))
+    ext.set("uri", SECTIONLST_EXT_URI)
+    ext.append(section_lst)
+    ext_lst = prs.element.find(qn("p:extLst"))
+    if ext_lst is None:
+        # p:extLst is the last child in the CT_Presentation sequence
+        ext_lst = etree.SubElement(prs.element, qn("p:extLst"))
+    ext_lst.append(ext)
+    return [name for name, _ in plan]
+
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 SIZES = {"16:9": (13.33, 7.5), "4:3": (10.0, 7.5)}
 
@@ -1072,6 +1158,13 @@ def build(outline_path, output_path, palette_key=None,
         print(f"\nBuild aborted: {failures} slide(s) failed — no file written.",
               file=sys.stderr)
         return False
+
+    if not template_path:
+        # template mode skipped: sections rely on the 1:1 slides_data ->
+        # built-slide correspondence the styled pipeline guarantees
+        section_names = inject_sections(prs, slides_data, meta)
+        if section_names:
+            print(f"  Sections: {', '.join(section_names)}")
 
     prs.save(output_path)
     print(f"\nSaved: {output_path} ({len(built_slides)} slides)")

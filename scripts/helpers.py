@@ -178,6 +178,34 @@ def add_picture_cover(slide, prs, img_path, alt=None):
     return pic
 
 
+def _picture_blip(picture):
+    return picture._element.find(qn("p:blipFill") + "/" + qn("a:blip"))
+
+
+def set_picture_alpha(picture, pct):
+    """Make a picture semi-transparent (pct = opacity 0-100) via a:alphaModFix."""
+    blip = _picture_blip(picture)
+    if blip is None:
+        return
+    for existing in blip.findall(qn("a:alphaModFix")):
+        blip.remove(existing)
+    fix = etree.SubElement(blip, qn("a:alphaModFix"))
+    fix.set("amt", str(int(pct * 1000)))
+
+
+def set_picture_duotone(picture, hex_dark, hex_light):
+    """Brand-tint a photo: a:duotone mapping shadows->hex_dark, lights->hex_light."""
+    blip = _picture_blip(picture)
+    if blip is None:
+        return
+    for existing in blip.findall(qn("a:duotone")):
+        blip.remove(existing)
+    duo = etree.SubElement(blip, qn("a:duotone"))
+    for hex_color in (hex_dark, hex_light):
+        clr = etree.SubElement(duo, qn("a:srgbClr"))
+        clr.set("val", hex_color)
+
+
 # ── Visual spec resolution ───────────────────────────────────────────────────
 VISUAL_SUBDIRS = {
     "user-image": "user-images",
@@ -187,16 +215,50 @@ VISUAL_SUBDIRS = {
 
 
 def parse_visual(spec):
-    """Split a **Visual:** value into (kind, value).
+    """Split a **Visual:** value into (kind, value), options stripped.
 
     kinds: 'chart' (value = chart type), 'image' (value = path spec), None.
+    Silent on malformed options — parse_visual_opts warns; this wrapper is
+    called repeatedly during validation and must not spam stderr.
+    """
+    kind, value, _ = parse_visual_opts(spec, warn_opts=False)
+    return kind, value
+
+
+def parse_visual_opts(spec, warn_opts=True):
+    """Split a **Visual:** value into (kind, value, opts).
+
+    Image specs take pipe-separated options after the path:
+    'user-image:photo.png|alpha=85|duotone'.  Supported opts:
+      alpha=N   -> {"alpha": N}  (opacity percent, 0-100)
+      duotone   -> {"duotone": True}  (brand-tint via palette bg/accent1)
+    Malformed or unknown options are ignored with a warning.
     """
     spec = (spec or "").strip()
     if not spec or spec.lower() == "none":
-        return None, None
+        return None, None, {}
     if spec.startswith("chart:"):
-        return "chart", spec.split(":", 1)[1].strip().lower()
-    return "image", spec
+        return "chart", spec.split(":", 1)[1].strip().lower(), {}
+    value, *raw_opts = (part.strip() for part in spec.split("|"))
+    opts = {}
+    for opt in raw_opts:
+        low = opt.lower()
+        if low == "duotone":
+            opts["duotone"] = True
+        elif low.startswith("alpha="):
+            try:
+                pct = int(low.split("=", 1)[1])
+                if not 0 <= pct <= 100:
+                    raise ValueError
+                opts["alpha"] = pct
+            except ValueError:
+                if warn_opts:
+                    warn(f"image option {opt!r} ignored — alpha must be "
+                         "0-100 (e.g. photo.png|alpha=85)")
+        elif opt and warn_opts:
+            warn(f"unknown image option {opt!r} ignored "
+                 "(supported: alpha=N, duotone)")
+    return "image", value, opts
 
 
 def resolve_image_path(spec, ctx):
