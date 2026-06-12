@@ -17,10 +17,16 @@ python3 scripts/diff_deck.py outline.md output.pptx   # content vs outline
 
 `qa_check.py` catches mechanically-detectable defects: shapes outside slide bounds, text under 10pt, leftover placeholder text, opaque chart backgrounds, WCAG contrast failures (<3:1 error, <4.5:1 small-text warning), word-dense slides, empty slides, duplicate slide titles, and likely text overflow. Exit code 1 = errors must be fixed.
 
-**Accessibility / projection mode** (stricter body-font floor, alt-text on images):
+**Accessibility / projection mode** (mirrors the MS Accessibility Checker):
 ```bash
 python3 scripts/qa_check.py output.pptx --accessibility
 ```
+
+Beyond the stricter contrast (4.5:1) and body-font floor (18pt), accessibility mode adds:
+- **Slide titles:** every slide must have a detectable title (error), and duplicate titles (case-insensitive) across the deck are reported once with all slide numbers — screen-reader navigation depends on unique titles.
+- **Tables:** must be marked with a header row (`firstRow`) — error; merged cells get a warning ("screen readers may misread — prefer simple structure"). Decks built by this skill's table builder pass both.
+- **Alt text:** missing alt text escalates to error, and alt text that is just a filename (`hero.png`, `image3`) is an error too — describe the image instead.
+- **Reading order:** warns when the title shape is not the first text-bearing shape in document order (screen readers announce content in spTree order, not visual order).
 
 For a proofreading pass (typos, wrong numbers, leftover draft phrasing):
 ```bash
@@ -42,6 +48,7 @@ Complements `qa_check.py` with deck-wide checks that per-slide inspection misses
 - **Page-number sequence:** consecutive, no gaps or duplicates.
 - **Font inventory:** flags decks with more distinct fonts than the threshold (inconsistent branding).
 - **Palette whitelist:** with `--palette`, any run or fill color outside the palette (plus known extras) is reported as an error.
+- **Google Slides compatibility** (`--gslides`): when the deck will be imported into Google Slides, warns on fonts outside the Google Slides set (they get substituted), SmartArt (flattens to a static image), non-fade transitions (dropped or changed), and embedded audio/video (does not import). Run this only when the user mentions Google Slides — the default palettes intentionally use PowerPoint-native fonts.
 
 For custom-brand decks pass `--assets-dir` so the palette whitelist resolves: `python3 scripts/pptx_lint.py deck.pptx --palette <name> --assets-dir <assets>`. Note: slides using per-slide `{palette=...}` overrides will flag as off-palette against the deck palette — lint against the dominant palette and review those slides by eye.
 
@@ -58,6 +65,25 @@ python3 scripts/render_slides.py output.pptx --grid --out assets/qa-thumbs/
 This creates `slide-01.png`, `slide-02.png`, … plus a stitched `grid.png`.
 
 If LibreOffice is not available the script falls back to a Pillow renderer — **the fallback dumps text only and cannot be used to judge layout, images, or charts**. Do not treat visual QA as complete without LibreOffice — rely on `qa_check.py` and opening the `.pptx` directly until LibreOffice is installed.
+
+---
+
+## Step 1.5 — Geometry Self-Check (instant — actually run it *before* Step 1's render)
+
+```bash
+python3 scripts/geometry_report.py output.pptx [--json] [--slides 2,5]
+```
+
+Deterministic per-slide layout metrics — no LibreOffice, no images, pure geometry. It is cheap enough to run before spending a render cycle, and it pinpoints exact shapes and offsets that thumbnails only show fuzzily, feeding the fix loop precise targets.
+
+Per slide it reports:
+- **Overlaps:** pairs of shapes that intersect by more than 0.02 sq in, excluding containment (a shape fully inside another is the intentional card/background pattern).
+- **Uneven spacing:** rows/columns of similar-sized shapes whose gap sequence is inconsistent ("uneven row spacing: gaps 0.31/0.29/0.55in").
+- **Near-misses:** shape edges that are *almost* aligned — off by 0.04–0.08in. Smaller offsets are invisible at render size; larger ones are presumed intentional.
+- **Whitespace ratio** (1 − covered/slide area, rasterized so overlaps aren't double-counted) plus **visual-mass imbalance** between left/right and top/bottom halves.
+- **Word count** — more than 90 words is flagged as text overload.
+
+Human output lists only slides with findings and ends with a summary line; `--json` emits full metrics for every slide (useful even when nothing is flagged — e.g. to compare whitespace ratios across sibling slides). Decks built by this skill's builders should report zero findings; anything it prints is worth fixing in the outline before rendering and inspecting.
 
 ---
 

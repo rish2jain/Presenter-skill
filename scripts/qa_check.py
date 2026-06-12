@@ -23,6 +23,8 @@ from pptx.util import Emu
 PLACEHOLDER_RX = re.compile(
     r"lorem|ipsum|xxxx|click to add|\[ add visual \]|placeholder"
     r"|this.*(page|slide).*layout", re.I)
+ALT_FILENAME_RX = re.compile(
+    r".*\.(png|jpe?g|gif|bmp|svg)$|^image\d*$", re.I)
 MIN_PT = 10
 PROJECTION_BODY_PT = 18  # federal / Section 508 presentation guidance
 EMU_IN = 914400
@@ -63,14 +65,14 @@ def iter_shapes(shapes):
             yield from iter_shapes(shape.shapes)
 
 
-def _slide_title_text(slide):
-    """Best-effort title: largest bold text or shapes.title."""
+def _slide_title(slide):
+    """Best-effort (shape, text) title: shapes.title, else largest run."""
     try:
         if slide.shapes.title and slide.shapes.title.text.strip():
-            return slide.shapes.title.text.strip()
+            return slide.shapes.title, slide.shapes.title.text.strip()
     except (AttributeError, ValueError):
         pass
-    best, best_size = "", 0
+    best_shape, best, best_size = None, "", 0
     for shape in iter_shapes(slide.shapes):
         if not getattr(shape, "has_text_frame", False):
             continue
@@ -82,7 +84,13 @@ def _slide_title_text(slide):
                 if size >= best_size:
                     best_size = size
                     best = run.text.strip()
-    return best
+                    best_shape = shape
+    return best_shape, best
+
+
+def _slide_title_text(slide):
+    """Best-effort title: largest bold text or shapes.title."""
+    return _slide_title(slide)[1]
 
 
 def _solid_fill_rgb(shape):
@@ -213,7 +221,48 @@ def check_image_alt(shape, issues, where, accessibility=False):
     if not descr or not descr.strip():
         msg = f"{where}: image missing alt text (descr attribute)"
         (issues["error"] if accessibility else issues["warn"]).append(msg)
+    elif accessibility and ALT_FILENAME_RX.match(descr.strip()):
+        issues["error"].append(
+            f"{where}: alt text is a filename ({descr.strip()!r}) — "
+            "describe the image instead")
     return True
+
+
+def _tc_merged(tc):
+    if int(tc.get("gridSpan") or 1) > 1 or int(tc.get("rowSpan") or 1) > 1:
+        return True
+    return tc.get("hMerge") in ("1", "true") or tc.get("vMerge") in ("1", "true")
+
+
+def check_table_a11y(shape, issues, where):
+    """MS Accessibility Checker table rules: marked header row, no merges."""
+    if not getattr(shape, "has_table", False):
+        return
+    tbl = shape.table._tbl
+    tblPr = tbl.tblPr
+    if tblPr is None or tblPr.get("firstRow") not in ("1", "true"):
+        issues["error"].append(
+            f"{where}: table not marked with a header row (firstRow) — "
+            "screen readers cannot announce column headers")
+    if any(_tc_merged(tc) for tc in tbl.iter(qn("a:tc"))):
+        issues["warn"].append(
+            f"{where}: table has merged cells — screen readers may misread; "
+            "prefer simple structure")
+
+
+def check_reading_order(slide, issues, where):
+    """Title shape should be the first text-bearing shape in spTree order."""
+    title_shape, _ = _slide_title(slide)
+    if title_shape is None:
+        return
+    first_text = next(
+        (s for s in iter_shapes(slide.shapes)
+         if getattr(s, "has_text_frame", False)
+         and s.text_frame.text.strip()), None)
+    if first_text is not None and first_text.shape_id != title_shape.shape_id:
+        issues["warn"].append(
+            f"{where}: title is not first in reading order — screen readers "
+            "announce it after other content")
 
 
 def check_deck(pptx_path, accessibility=False):
@@ -232,13 +281,12 @@ def check_deck(pptx_path, accessibility=False):
 
         title = _slide_title_text(slide)
         if not title:
-            issues["warn"].append(f"{where}: no detectable slide title")
-        elif title in titles_seen:
-            issues["warn"].append(
-                f"{where}: duplicate slide title {title!r} "
-                f"(also on slide {titles_seen[title]})")
+            msg = f"{where}: no detectable slide title"
+            (issues["error"] if accessibility else issues["warn"]).append(msg)
         else:
-            titles_seen[title] = n
+            titles_seen.setdefault(title.strip().casefold(), []).append(n)
+        if accessibility:
+            check_reading_order(slide, issues, where)
 
         filled_below = []  # accumulating: shapes earlier in doc order are below
         for shape in iter_shapes(slide.shapes):
@@ -260,6 +308,8 @@ def check_deck(pptx_path, accessibility=False):
                 has_visual = True
             if check_image_alt(shape, issues, where, accessibility):
                 has_visual = True
+            if accessibility:
+                check_table_a11y(shape, issues, where)
             if shape.shape_type in (MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.TABLE):
                 has_visual = True
             if shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE and not getattr(
@@ -274,6 +324,13 @@ def check_deck(pptx_path, accessibility=False):
         if word_count > MAX_WORDS_PER_SLIDE:
             issues["warn"].append(
                 f"{where}: {word_count} words — dense slide, consider splitting")
+
+    for key, ns in titles_seen.items():
+        if len(ns) > 1:
+            where_list = ", ".join(str(s) for s in ns)
+            msg = (f"duplicate slide title {key!r} on slides {where_list} — "
+                   "titles must be unique for navigation")
+            (issues["error"] if accessibility else issues["warn"]).append(msg)
 
     return issues
 

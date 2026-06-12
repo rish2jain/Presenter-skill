@@ -298,3 +298,181 @@ def test_axis_scale_auto_axes_ignored():
     _chart_slide(prs, [300, 500])  # auto axis -> not comparable
     issues = lint_deck(prs)
     assert not any("dishonest scale" in w for w in issues["warn"]), issues
+
+
+# ── Google Slides compatibility (--gslides) ──────────────────────────────────
+def test_gslides_unsafe_font_warned_only_with_flag():
+    prs = _prs()
+    slide = _blank(prs)
+    tb = _tb(slide, "hello", 1.0, 1.0)
+    tb.text_frame.paragraphs[0].runs[0].font.name = "Gill Sans MT"
+    issues = lint_deck(prs, gslides=True)
+    assert any("gslides" in w and "Gill Sans MT" in w
+               for w in issues["warn"]), issues
+    issues = lint_deck(prs)  # flag off -> no gslides output
+    assert not any("gslides" in w for w in issues["warn"]), issues
+
+
+def test_gslides_safe_font_passes():
+    prs = _prs()
+    slide = _blank(prs)
+    tb = _tb(slide, "hello", 1.0, 1.0)
+    tb.text_frame.paragraphs[0].runs[0].font.name = "Arial"
+    issues = lint_deck(prs, gslides=True)
+    assert not any("gslides: font" in w for w in issues["warn"]), issues
+
+
+def test_gslides_nonfade_transition_warned():
+    from lxml import etree
+    from pptx.oxml.ns import qn
+    prs = _prs()
+    slide = _blank(prs)
+    trans = etree.SubElement(slide.element, qn("p:transition"))
+    etree.SubElement(trans, qn("p:wipe"))
+    issues = lint_deck(prs, gslides=True)
+    assert any("transition 'wipe'" in w for w in issues["warn"]), issues
+
+
+def test_gslides_fade_transition_passes():
+    from lxml import etree
+    from pptx.oxml.ns import qn
+    prs = _prs()
+    slide = _blank(prs)
+    trans = etree.SubElement(slide.element, qn("p:transition"))
+    etree.SubElement(trans, qn("p:fade"))
+    issues = lint_deck(prs, gslides=True)
+    assert not any("transition" in w for w in issues["warn"]), issues
+
+
+def test_gslides_smartart_warned():
+    from lxml import etree
+    prs = _prs()
+    slide = _blank(prs)
+    etree.SubElement(
+        slide.shapes._spTree,
+        "{http://schemas.openxmlformats.org/drawingml/2006/diagram}relIds")
+    issues = lint_deck(prs, gslides=True)
+    assert any("SmartArt" in w for w in issues["warn"]), issues
+
+
+def test_gslides_embedded_media_warned(tmp_path):
+    from pptx.util import Inches
+    movie = tmp_path / "clip.mp4"
+    movie.write_bytes(b"fake video bytes")
+    prs = _prs()
+    slide = _blank(prs)
+    slide.shapes.add_movie(str(movie), Inches(1), Inches(1),
+                           Inches(2), Inches(2), mime_type="video/mp4")
+    issues = lint_deck(prs, gslides=True)
+    assert any("embedded media" in w for w in issues["warn"]), issues
+
+
+# ── accessibility extensions (qa_check --accessibility) ─────────────────────
+def _qa(prs, tmp_path, accessibility=True):
+    from qa_check import check_deck
+    p = tmp_path / "deck.pptx"
+    prs.save(p)
+    return check_deck(p, accessibility=accessibility)
+
+
+def test_a11y_missing_title_escalates_to_error(tmp_path):
+    prs = _prs()
+    _rect(_blank(prs), 1.0, 1.0, 2.0, 2.0)  # no text anywhere
+    issues = _qa(prs, tmp_path)
+    assert any("no detectable slide title" in e for e in issues["error"]), issues
+    issues = _qa(prs, tmp_path, accessibility=False)
+    assert any("no detectable slide title" in w for w in issues["warn"]), issues
+    assert not any("no detectable slide title" in e for e in issues["error"])
+
+
+def test_a11y_duplicate_titles_one_consolidated_issue(tmp_path):
+    prs = _prs()
+    for text in ("Revenue Growth", "  revenue growth"):  # case-folded match
+        _tb(_blank(prs), text, 0.7, 0.5, w=8.0, h=0.8, size=24)
+    issues = _qa(prs, tmp_path)
+    dups = [e for e in issues["error"] if "duplicate slide title" in e]
+    assert len(dups) == 1, issues
+    assert "slides 1, 2" in dups[0], dups[0]
+
+
+def _table_slide(prs, rows=2, cols=2):
+    from pptx.util import Inches
+    slide = _blank(prs)
+    return slide.shapes.add_table(rows, cols, Inches(1), Inches(1),
+                                  Inches(4), Inches(2))
+
+
+def test_a11y_table_without_header_row_error(tmp_path):
+    prs = _prs()
+    gf = _table_slide(prs)
+    del gf.table._tbl.tblPr.attrib["firstRow"]
+    issues = _qa(prs, tmp_path)
+    assert any("header row" in e for e in issues["error"]), issues
+
+
+def test_a11y_table_with_header_row_passes(tmp_path):
+    prs = _prs()
+    _table_slide(prs)  # python-pptx default sets firstRow="1"
+    issues = _qa(prs, tmp_path)
+    assert not any("header row" in e for e in issues["error"]), issues
+
+
+def test_a11y_merged_cells_warned(tmp_path):
+    prs = _prs()
+    gf = _table_slide(prs)
+    gf.table.cell(0, 0).merge(gf.table.cell(0, 1))
+    issues = _qa(prs, tmp_path)
+    assert any("merged cells" in w for w in issues["warn"]), issues
+
+
+def test_a11y_table_checks_off_in_default_mode(tmp_path):
+    prs = _prs()
+    gf = _table_slide(prs)
+    del gf.table._tbl.tblPr.attrib["firstRow"]
+    gf.table.cell(0, 0).merge(gf.table.cell(0, 1))
+    issues = _qa(prs, tmp_path, accessibility=False)
+    assert not any("header row" in m or "merged cells" in m
+                   for m in issues["error"] + issues["warn"]), issues
+
+
+def _picture_slide(prs, tmp_path, descr):
+    from PIL import Image
+    from pptx.util import Inches
+    img = tmp_path / "pic.png"
+    Image.new("RGB", (8, 8), (40, 90, 160)).save(img)
+    slide = _blank(prs)
+    pic = slide.shapes.add_picture(str(img), Inches(1), Inches(1))
+    pic._element._nvXxPr.cNvPr.set("descr", descr)
+    return slide
+
+
+def test_a11y_filename_alt_text_flagged(tmp_path):
+    prs = _prs()
+    _picture_slide(prs, tmp_path, "hero-shot.png")
+    issues = _qa(prs, tmp_path)
+    assert any("alt text is a filename" in e for e in issues["error"]), issues
+
+
+def test_a11y_descriptive_alt_text_passes(tmp_path):
+    prs = _prs()
+    _picture_slide(prs, tmp_path, "Team on stage at the product launch")
+    issues = _qa(prs, tmp_path)
+    assert not any("alt text is a filename" in e for e in issues["error"])
+
+
+def test_a11y_reading_order_title_not_first_warned(tmp_path):
+    prs = _prs()
+    slide = _blank(prs)
+    _tb(slide, "body copy appears first", 0.7, 2.0, w=6.0, h=0.6, size=20)
+    _tb(slide, "The Actual Title", 0.7, 0.5, w=8.0, h=0.8, size=30)
+    issues = _qa(prs, tmp_path)
+    assert any("reading order" in w for w in issues["warn"]), issues
+
+
+def test_a11y_reading_order_title_first_passes(tmp_path):
+    prs = _prs()
+    slide = _blank(prs)
+    _tb(slide, "The Actual Title", 0.7, 0.5, w=8.0, h=0.8, size=30)
+    _tb(slide, "body copy after the title", 0.7, 2.0, w=6.0, h=0.6, size=20)
+    issues = _qa(prs, tmp_path)
+    assert not any("reading order" in w for w in issues["warn"]), issues

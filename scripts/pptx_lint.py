@@ -11,9 +11,12 @@ Macabacus "Deck Check" / UpSlide "Slide Check" class:
   3. Font inventory: more than MAX_FONTS distinct fonts reads as inconsistent.
   4. Color inventory / palette whitelist: with --palette, any explicit run or
      fill color outside the palette (plus known extras) is an error.
+  5. Google Slides compatibility (--gslides): fonts outside the Google Slides
+     set, SmartArt, non-fade transitions, and embedded media all degrade on
+     import — each is warned.
 
 Usage:
-    python3 scripts/pptx_lint.py deck.pptx [--palette midnight-executive]
+    python3 scripts/pptx_lint.py deck.pptx [--palette midnight-executive] [--gslides]
 """
 import argparse
 import re
@@ -24,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pptx import Presentation
+from pptx.oxml.ns import qn
 from qa_check import iter_shapes, _solid_fill_rgb
 
 EMU_IN = 914400
@@ -36,6 +40,17 @@ PAGENUM_RX = re.compile(r"^(B·)?\d+$")
 # waterfall negative red, pure white/black (cards, shadows) are always allowed
 EXTRA_ALLOWED = {"D9655B", "FFFFFF", "000000"}
 _HEX6 = re.compile(r"[0-9A-Fa-f]{6}")
+
+# fonts that survive a Google Slides import without substitution
+GSLIDES_SAFE_FONTS = {
+    "Arial", "Georgia", "Times New Roman", "Verdana", "Trebuchet MS",
+    "Courier New", "Roboto", "Open Sans", "Lato", "Montserrat",
+    "Merriweather", "Source Sans Pro", "Playfair Display", "Inter",
+    "Oswald", "Raleway", "PT Sans", "Nunito", "Work Sans", "Poppins",
+}
+_GSLIDES_SAFE_LOWER = {f.lower() for f in GSLIDES_SAFE_FONTS}
+DIAGRAM_NS = b"http://schemas.openxmlformats.org/drawingml/2006/diagram"
+MEDIA_EXTS = (".mp4", ".mov", ".mp3", ".wav", ".m4a")
 
 
 def _chart_series_allowed(pal, issues):
@@ -323,7 +338,39 @@ def check_fonts_installed(inv, issues):
                 "will substitute; QA thumbnails won't match PowerPoint")
 
 
-def lint_deck(prs, palette_key=None):
+def check_gslides(prs, issues, inv=None):
+    """Google Slides import hazards: font substitution, SmartArt flattening,
+    dropped transitions, embedded media."""
+    fonts, _ = inv if inv is not None else collect_inventory(prs)
+    for name, slides in sorted(fonts.items()):
+        if name.lower() not in _GSLIDES_SAFE_LOWER:
+            where = ", ".join(str(s) for s in sorted(slides)[:5])
+            issues["warn"].append(
+                f"gslides: font '{name}' (slide(s) {where}) not in the Google "
+                "Slides font set — will be substituted on import")
+    for n, slide in enumerate(prs.slides, 1):
+        if DIAGRAM_NS in slide.part.blob:
+            issues["warn"].append(
+                f"gslides: slide {n} contains SmartArt — flattens to a "
+                "static image on Google Slides import")
+        trans = slide.element.find(qn("p:transition"))
+        if trans is None:
+            continue
+        child = next(iter(trans), None)
+        tag = getattr(child, "tag", None)
+        if isinstance(tag, str) and tag != qn("p:fade"):
+            issues["warn"].append(
+                f"gslides: slide {n} transition '{tag.split('}')[-1]}' "
+                "dropped/changed by Google Slides (only fade survives)")
+    for part in prs.part.package.iter_parts():
+        name = str(part.partname)
+        if name.startswith("/ppt/media/") and name.lower().endswith(MEDIA_EXTS):
+            issues["warn"].append(
+                f"gslides: embedded media {name} — audio/video does not "
+                "import into Google Slides")
+
+
+def lint_deck(prs, palette_key=None, gslides=False):
     issues = {"error": [], "warn": []}
     check_jiggle(prs, issues)
     check_page_sequence(prs, issues)
@@ -332,6 +379,8 @@ def lint_deck(prs, palette_key=None):
     inv = collect_inventory(prs)
     check_inventory(inv, issues, palette_key)
     check_fonts_installed(inv, issues)
+    if gslides:
+        check_gslides(prs, issues, inv)
     return issues
 
 
@@ -343,11 +392,14 @@ def main():
     parser.add_argument("--assets-dir", default="assets",
                         help="Root assets dir; custom palettes load from "
                              "<assets-dir>/palettes/")
+    parser.add_argument("--gslides", action="store_true",
+                        help="Warn on features that degrade when the deck is "
+                             "imported into Google Slides")
     args = parser.parse_args()
     from palettes import load_custom_palettes
     load_custom_palettes(Path(args.assets_dir) / "palettes")
     prs = Presentation(args.pptx)
-    issues = lint_deck(prs, args.palette)
+    issues = lint_deck(prs, args.palette, gslides=args.gslides)
     for e in issues["error"]:
         print(f"  [ERROR] {e}")
     for w in issues["warn"]:

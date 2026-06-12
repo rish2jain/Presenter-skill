@@ -128,7 +128,7 @@ Files: `scripts/build_deck.py`, `scripts/builders.py`, `references/generation-gu
   ~14 chars; ≥6 sections → fall back to "n/N · Section" text form (warn once).
   Mutually compatible with `**Auto-Agenda:**`.
 
-## T7. QA pack: accessibility, Google Slides compat, geometry report — `[ ]`
+## T7. QA pack: accessibility, Google Slides compat, geometry report — `[x]`
 
 Files: `scripts/qa_check.py`, `scripts/pptx_lint.py`, new `scripts/geometry_report.py`,
 `references/qa-guide.md`, `tests/` (extend test_lint.py, new test_geometry.py).
