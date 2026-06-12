@@ -263,6 +263,29 @@ def test_value_line_unparsable_warns(capsys):
     assert not any(t == "Target" for t in _texts(slide)), _texts(slide)
 
 
+def test_value_and_benchmark_lines_all_none_series_no_crash():
+    """Regression: series with exclusively None values must not raise ValueError."""
+    from types import SimpleNamespace
+    from charts import add_benchmark_line, add_value_line
+    from pptx.util import Inches
+
+    prs = _prs()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    # Minimal mock chart whose single series is all-None
+    series = SimpleNamespace(values=[None, None, None])
+    plot = SimpleNamespace(series=[series])
+    va = SimpleNamespace(maximum_scale=None, minimum_scale=None)
+    chart = SimpleNamespace(plots=[plot], value_axis=va)
+
+    left, top, w, h = 1.0, 1.0, 8.0, 5.0
+    # add_benchmark_line: all-None series — data_max stays at the spec value (10)
+    add_benchmark_line(slide, chart, PAL, "10 Benchmark", left, top, w, h)
+    # add_value_line: all-None series — axis derives from data_max=0; value 5
+    # falls outside 0.._nice_ceil(0*1.05) so line is skipped (no crash)
+    add_value_line(slide, chart, PAL, "Target, 5", left, top, w, h)
+
+
 # ── stacked-100 dual labels ──────────────────────────────────────────────────
 STACK_MD = """## Slide 1: Mix shifts decisively toward subscriptions
 **Layout:** two-column-split

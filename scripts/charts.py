@@ -33,6 +33,8 @@ LABEL_MODES = ("pct", "abs", "both")
 def round_to_sum(values, total=100, decimals=0):
     """Largest-remainder rounding: displayed values sum to exactly `total`.
 
+    Precondition: values should be percentage-normalized shares that already
+    sum approximately to `total` (callers pass v/total*100 fractions).
     Ties go to later elements ([33.33]*3 -> [33, 33, 34]). Any negative
     value falls back to plain rounding — largest-remainder doesn't apply.
     """
@@ -222,7 +224,9 @@ def add_benchmark_line(slide, chart, pal, spec, left, top, w, h):
 
     data_max = value
     for s in chart.plots[0].series:
-        data_max = max(data_max, max(v for v in s.values if v is not None))
+        m = max((v for v in s.values if v is not None), default=None)
+        if m is not None:
+            data_max = max(data_max, m)
     axis_max = _nice_ceil(data_max * 1.05)
     va = chart.value_axis
     va.maximum_scale = float(axis_max)
@@ -252,7 +256,9 @@ def add_value_line(slide, chart, pal, spec, left, top, w, h):
     if axis_max is None:
         data_max = 0
         for s in chart.plots[0].series:
-            data_max = max(data_max, max(v for v in s.values if v is not None))
+            m = max((v for v in s.values if v is not None), default=None)
+            if m is not None:
+                data_max = max(data_max, m)
         axis_max = _nice_ceil(data_max * 1.05)
         va.maximum_scale = float(axis_max)
         va.minimum_scale = 0.0

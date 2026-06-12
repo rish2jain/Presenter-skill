@@ -309,10 +309,10 @@ def apply_scale_groups(meta, slides):
         if not nums:
             continue
         groups.setdefault(value, []).append((i, p, max(nums)))
+    from charts import _nice_ceil
     for chart_kind, members in groups.items():
         if len(members) < 2:
             continue
-        from charts import _nice_ceil
         axis_max = _nice_ceil(max(m for _, _, m in members))
         for _, p, _ in members:
             p["axis_max"] = axis_max
