@@ -209,10 +209,16 @@ def _pick_cjk_font():
 
 
 def set_cjk(on):
-    """Toggle the deck-wide CJK font overlay (reset to False per build)."""
+    """Toggle the deck-wide CJK font overlay (reset to False per build).
+
+    Passing False also resets probe state so warn-once and font detection
+    cannot leak across back-to-back builds in the same process.
+    """
     import sys
     _CJK["on"] = bool(on)
     if not on:
+        _CJK["probed"] = False
+        _CJK["font"] = None
         return
     if not _CJK["probed"]:
         _CJK["font"] = _pick_cjk_font()

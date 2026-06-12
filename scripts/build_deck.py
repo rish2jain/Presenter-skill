@@ -306,7 +306,12 @@ def apply_references(meta, slides):
     """**References:** on -> append an appendix 'Sources' slide aggregating
     unique '- Source:' values with their slide (or, with **Exhibits:** on,
     exhibit) numbers. Call after apply_auto_agenda so numbers match the deck.
-    Default: off; no sources -> warn and no-op."""
+    Default: off; no sources -> warn and no-op.
+
+    Note: in template mode, build() skips exhibit badges on templated slides,
+    so the exhibit numbers assigned here (counting every sourced slide) may
+    not match the badges visible in the deck.  build() emits a warning when
+    both template_path and Exhibits are active."""
     if meta.get("references", "").lower() not in ("on", "true", "yes"):
         return slides
     exhibits_on = meta.get("exhibits", "").lower() in ("on", "true", "yes")
@@ -1246,6 +1251,15 @@ def build(outline_path, output_path, palette_key=None,
         print(f"Outline OK: {len(slides_data)} slides, "
               f"{len(warnings)} warning(s).")
         return True
+
+    # Template mode + References + Exhibits: exhibit badges are skipped on
+    # templated slides, so the "Exhibit N" numbers on the Sources slide may
+    # not match the actual slide badges.  Warn once so the author is aware.
+    if (template_path
+            and meta.get("references", "").lower() in ("on", "true", "yes")
+            and meta.get("exhibits", "").lower() in ("on", "true", "yes")):
+        warn("References + Exhibits in template mode: exhibit numbers on the "
+             "Sources slide may not match (templated slides skip badges)")
 
     if deck_has_cjk(slides_data):
         set_cjk(True)  # overlay CJK-safe fonts on every palette this build

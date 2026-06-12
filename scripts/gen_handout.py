@@ -131,6 +131,12 @@ def main():
     ctx = {"outline_dir": outline.parent,
            "assets_dir": Path(args.assets_dir) if args.assets_dir
            else Path("assets")}
+    import build_deck as _bd
+    _raw_meta, _raw_slides = _bd.parse_outline(
+        outline.read_text(encoding="utf-8"))
+    _data_errors, _data_warnings = _bd.load_data_files(_raw_slides, ctx)
+    for msg in _data_errors + _data_warnings:
+        print(f"[WARN] {msg}", file=sys.stderr)
     text = gen_handout(outline.read_text(encoding="utf-8"), ctx)
     out_path.write_text(text, encoding="utf-8")
     print(f"Saved: {out_path}")

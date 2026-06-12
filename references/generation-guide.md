@@ -407,7 +407,8 @@ both are present.
 **CSV chart data** — `- Data-File: data/q3.csv` loads a chart's
 `**Data:**` block from a CSV (resolved against the outline dir, then the
 assets dir, then as given). Two columns = `label,value` rows (optional
-header row tolerated; `total`/`end` values work for waterfalls);
+header row tolerated; `total`/`end` sentinel values for waterfall closing
+bars work only in this 2-column form, not in 3+ column multi-series CSVs);
 3+ columns require a header row — first column is labels, remaining
 headers become `**Series:**` names (unless `**Series:**` is set
 explicitly). `$`, `,`, `%` are stripped like inline data. Missing files
