@@ -120,25 +120,42 @@ def bullets_fit(bullets, font_pt, col_w_in, avail_h_in, cols=1, step_in=0.0,
 
     Splits bullets across cols columns column-major (like build_bullet_slide);
     each bullet consumes at least its fixed step_in slot. Returns
-    (ratio, total_lines) where ratio = worst column's estimated height /
-    avail_h_in — >1.0 means autofit territory, >1.4 means split the slide.
+    (ratio, total_lines, overflowing_indices) where:
+      ratio               = worst column's estimated height / avail_h_in —
+                            >1.0 means autofit territory, >1.4 means split slide.
+      total_lines         = sum of wrapped lines across all bullets.
+      overflowing_indices = list of bullet indices (0-based) whose wrapped height
+                            exceeds step_in AND which are not the last bullet in
+                            their column (i.e. they would collide with the next
+                            bullet's fixed-y slot).  Empty when step_in == 0.
     """
     bullets = list(bullets or [])
     if not bullets or avail_h_in <= 0:
-        return 0.0, 0
+        return 0.0, 0, []
     cols = max(int(cols), 1)
     per_col = -(-len(bullets) // cols)
     line_h = font_pt * LINE_SPACING / 72.0
-    heights, total_lines = [], 0
+    heights, line_counts, total_lines = [], [], 0
     for b in bullets:
         plain, has_icon = strip_markup(b)
         w = col_w_in - (ICON_INDENT if has_icon else MARKER_INDENT)
         lines = max(estimate_lines(plain, font_pt, w, bold), 1)
         total_lines += lines
         heights.append(max(lines * line_h, step_in))
+        line_counts.append(lines)
     worst = max(sum(heights[c * per_col:(c + 1) * per_col])
                 for c in range(cols))
-    return worst / avail_h_in, total_lines
+    # Per-slot collision detection: a non-terminal bullet overflows its slot
+    # when its wrapped height exceeds the fixed step_in spacing.
+    overflowing_indices = []
+    if step_in > 0:
+        for c in range(cols):
+            col_start = c * per_col
+            col_end = min(col_start + per_col, len(bullets))
+            for pos in range(col_start, col_end - 1):  # skip last in each col
+                if line_counts[pos] * line_h > step_in:
+                    overflowing_indices.append(pos)
+    return worst / avail_h_in, total_lines, overflowing_indices
 
 
 def apply_autofit(text_frame, scale_pct, ln_reduction_pct=10):

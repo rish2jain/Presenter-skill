@@ -85,16 +85,42 @@ def twocol_geometry():
 
 
 def _autofit_overflow(boxes, bullets, geo):
-    """Bullet block over capacity: shrink text via normAutofit (floor 80%)."""
+    """Bullet block over capacity OR per-slot collision: shrink via normAutofit.
+
+    Triggers when:
+      - The column's total height ratio exceeds 1.0 (existing behaviour), OR
+      - Any non-terminal bullet's wrapped height exceeds its fixed step slot
+        (per-slot collision guard — catches a single long bullet that would
+        render on top of the next bullet even when total ratio is under 1.0).
+
+    Scale is floored at 80 and picked as the tightest needed across both checks.
+    """
     if not bullets:
         return
     import textfit
-    ratio, _ = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
-                                   geo["avail_h"], cols=geo["cols"],
-                                   step_in=geo["step"])
-    if ratio <= 1.0:
+    ratio, _, overflowing = textfit.bullets_fit(
+        bullets, geo["font_pt"], geo["col_w"],
+        geo["avail_h"], cols=geo["cols"], step_in=geo["step"])
+
+    # Scale needed to bring total column height within budget.
+    scale_ratio = max(80, min(100, int(100 / ratio))) if ratio > 1.0 else 100
+
+    # Scale needed to bring each overflowing per-slot bullet within its step.
+    scale_slot = 100
+    if overflowing and geo["step"] > 0:
+        line_h = geo["font_pt"] * 1.2 / 72.0
+        per_col = -(-len(bullets) // max(int(geo["cols"]), 1))
+        for idx in overflowing:
+            plain, has_icon = textfit.strip_markup(bullets[idx])
+            w = geo["col_w"] - (textfit.ICON_INDENT if has_icon
+                                else textfit.MARKER_INDENT)
+            lines = max(textfit.estimate_lines(plain, geo["font_pt"], w), 1)
+            needed = max(80, min(100, int(100 * geo["step"] / (lines * line_h))))
+            scale_slot = min(scale_slot, needed)
+
+    scale = min(scale_ratio, scale_slot)
+    if scale >= 100:
         return
-    scale = max(80, min(100, int(100 / ratio)))
     for tb in boxes:
         textfit.apply_autofit(tb.text_frame, scale)
 

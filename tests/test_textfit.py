@@ -106,28 +106,64 @@ def test_strip_markup_icon_and_rich():
 
 # ── bullets_fit ──────────────────────────────────────────────────────────────
 def test_bullets_fit_empty():
-    assert textfit.bullets_fit([], 14, 5.765, 5.3) == (0.0, 0)
+    assert textfit.bullets_fit([], 14, 5.765, 5.3) == (0.0, 0, [])
 
 
 def test_bullets_fit_step_floor():
     # short bullets each consume one step slot
-    ratio, lines = textfit.bullets_fit(["a", "b", "c"], 14, 5.765, 5.3,
-                                       cols=1, step_in=0.74)
+    ratio, lines, overflow = textfit.bullets_fit(["a", "b", "c"], 14, 5.765, 5.3,
+                                                 cols=1, step_in=0.74)
     assert ratio == pytest.approx(3 * 0.74 / 5.3)
     assert lines == 3
+    assert overflow == []  # single-line bullets never overflow their slot
 
 
 def test_bullets_fit_two_columns_halve_the_load():
     bullets = ["short bullet"] * 8
-    one, _ = textfit.bullets_fit(bullets, 14, 5.765, 5.3, cols=1, step_in=0.74)
-    two, _ = textfit.bullets_fit(bullets, 14, 5.765, 5.3, cols=2, step_in=0.74)
+    one, *_ = textfit.bullets_fit(bullets, 14, 5.765, 5.3, cols=1, step_in=0.74)
+    two, *_ = textfit.bullets_fit(bullets, 14, 5.765, 5.3, cols=2, step_in=0.74)
     assert two == pytest.approx(one / 2)
 
 
 def test_bullets_fit_longer_text_higher_ratio():
-    short, _ = textfit.bullets_fit([SENTENCE] * 4, 14, 5.765, 5.3)
-    long, _ = textfit.bullets_fit([SENTENCE * 4] * 4, 14, 5.765, 5.3)
+    short, *_ = textfit.bullets_fit([SENTENCE] * 4, 14, 5.765, 5.3)
+    long, *_ = textfit.bullets_fit([SENTENCE * 4] * 4, 14, 5.765, 5.3)
     assert long > short
+
+
+def test_bullets_fit_overflowing_indices_non_terminal():
+    """A very long non-terminal bullet is flagged; the last bullet in a column
+    is exempt because there is no next bullet to collide with."""
+    geo = builders.bullet_geometry()
+    # Build 6 bullets: first is very long (~270 chars), rest are short.
+    long_bullet = (SENTENCE + " ") * 4  # well over 270 chars
+    bullets = [long_bullet] + [SENTENCE[:40]] * 5
+    ratio, _, overflowing = textfit.bullets_fit(
+        bullets, geo["font_pt"], geo["col_w"], geo["avail_h"],
+        cols=geo["cols"], step_in=geo["step"])
+    # The long bullet at index 0 is not the last in its column and wraps > step.
+    assert 0 in overflowing
+
+
+def test_bullets_fit_last_bullet_not_flagged():
+    """When the long bullet is the LAST in its column it should NOT be flagged."""
+    geo = builders.bullet_geometry()
+    long_bullet = (SENTENCE + " ") * 4
+    # Place long bullet last; 5 short bullets before it in a 1-column layout.
+    bullets = [SENTENCE[:40]] * 5 + [long_bullet]
+    _, _, overflowing = textfit.bullets_fit(
+        bullets, geo["font_pt"], geo["col_w"], geo["avail_h"],
+        cols=1, step_in=geo["step"])
+    # Last bullet is always exempt.
+    assert len(bullets) - 1 not in overflowing
+
+
+def test_bullets_fit_no_overflowing_without_step():
+    """When step_in == 0 there is no fixed slot, so overflowing is always []."""
+    long_bullet = (SENTENCE + " ") * 4
+    bullets = [long_bullet] * 4
+    _, _, overflowing = textfit.bullets_fit(bullets, 14, 5.765, 5.3, step_in=0.0)
+    assert overflowing == []
 
 
 # ── validate() capacity budgets ──────────────────────────────────────────────
@@ -159,9 +195,9 @@ def test_validate_mild_overflow_warns_autofit():
     geo = builders.bullet_geometry()
     text = ((SENTENCE + " ") * 4)[:205].strip()
     bullets = [text] * 14
-    ratio, _ = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
-                                   geo["avail_h"], cols=geo["cols"],
-                                   step_in=geo["step"])
+    ratio, *_ = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
+                                    geo["avail_h"], cols=geo["cols"],
+                                    step_in=geo["step"])
     assert 1.0 < ratio <= 1.4, f"test fixture drifted: ratio={ratio}"
     slides = _bullet_outline(bullets)
     errors, warnings = validate(slides, CTX)
@@ -201,6 +237,79 @@ def test_validate_short_heading_no_wrap_warning():
     assert not any("title wraps" in w for w in warnings)
 
 
+# ── per-slot collision guard ─────────────────────────────────────────────────
+def _collision_warns(warnings):
+    return [w for w in warnings if "will collide with the next bullet" in w]
+
+
+def _collision_errors(errors):
+    return [e for e in errors if "will collide with the next bullet" in e]
+
+
+def test_validate_per_slot_collision_warns():
+    """Exact repro: 6 bullets, first is very long (~270+ chars), rest short.
+    The long non-terminal bullet must trigger a collision warning at --check."""
+    geo = builders.bullet_geometry()
+    long_bullet = (SENTENCE + " ") * 4  # ~270 chars, wraps many lines
+    bullets = [long_bullet] + [SENTENCE[:40]] * 5
+    # Confirm the long bullet is NOT enough to trip the total-capacity warning.
+    ratio, *_ = textfit.bullets_fit(
+        bullets, geo["font_pt"], geo["col_w"], geo["avail_h"],
+        cols=geo["cols"], step_in=geo["step"])
+    # Total ratio may or may not exceed 1.0 — what matters is collision is flagged.
+    slides = _bullet_outline(bullets)
+    errors, warnings = validate(slides, CTX)
+    coll_warns = _collision_warns(warnings)
+    assert coll_warns, (
+        f"expected per-slot collision warning (ratio={ratio:.2f}); "
+        f"warnings={warnings}")
+    assert "bullet 1" in coll_warns[0]
+
+
+def test_validate_per_slot_last_bullet_no_collision_warn():
+    """Long bullet placed LAST in its column must not generate a collision warning."""
+    long_bullet = (SENTENCE + " ") * 4
+    # 5 short bullets + 1 very long bullet last, single column
+    bullets = [SENTENCE[:40]] * 5 + [long_bullet]
+    slides = _bullet_outline(bullets)
+    errors, warnings = validate(slides, CTX)
+    coll_warns = _collision_warns(warnings)
+    coll_errs = _collision_errors(errors)
+    # The long bullet is the last slot in its column — no collision possible.
+    assert not coll_warns and not coll_errs, (
+        f"unexpected collision message for last bullet: {coll_warns + coll_errs}")
+
+
+def test_validate_per_slot_severe_errors():
+    """When a non-terminal bullet is 1.8x taller than its step, it is an ERROR."""
+    geo = builders.bullet_geometry()
+    line_h = geo["font_pt"] * 1.2 / 72.0
+    # Build a bullet that wraps to enough lines to exceed 1.8 * step.
+    # Need lines * line_h > step * 1.8  →  lines > step * 1.8 / line_h
+    target_lines = int(geo["step"] * 1.8 / line_h) + 2
+    # Use a very long bullet to guarantee enough wrapped lines.
+    long_bullet = (SENTENCE + " ") * (target_lines * 4)
+    bullets = [long_bullet] + ["short"] * 5
+    slides = _bullet_outline(bullets)
+    errors, warnings = validate(slides, CTX)
+    coll_errs = _collision_errors(errors)
+    assert coll_errs, (
+        f"expected collision ERROR for ~{target_lines}-line bullet; "
+        f"errors={errors}, warnings={warnings}")
+
+
+def test_builder_autofit_per_slot_overflow():
+    """Builder applies autofit even when total ratio <= 1.0 but a non-terminal
+    bullet overflows its slot."""
+    geo = builders.bullet_geometry()
+    long_bullet = (SENTENCE + " ") * 4
+    bullets = [long_bullet] + [SENTENCE[:35]] * 5
+    slide = _build_bullets(bullets)
+    fits = _autofit_elements(slide)
+    # Autofit must be written for at least the overflowing bullet's text frame.
+    assert len(fits) > 0, "expected normAutofit for per-slot overflow"
+
+
 # ── builder normAutofit ──────────────────────────────────────────────────────
 def _autofit_elements(slide):
     found = []
@@ -224,14 +333,26 @@ def test_builder_writes_normautofit_in_overflow_band():
     geo = builders.bullet_geometry()
     text = ((SENTENCE + " ") * 4)[:205].strip()
     bullets = [text] * 14
-    ratio, _ = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
-                                   geo["avail_h"], cols=geo["cols"],
-                                   step_in=geo["step"])
+    ratio, _, overflowing = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
+                                               geo["avail_h"], cols=geo["cols"],
+                                               step_in=geo["step"])
     assert 1.0 < ratio <= 1.4, f"test fixture drifted: ratio={ratio}"
+    # Compute the same combined scale the builder uses.
+    scale_ratio = max(80, min(100, int(100 / ratio)))
+    scale_slot = 100
+    if overflowing and geo["step"] > 0:
+        line_h = geo["font_pt"] * 1.2 / 72.0
+        for idx in overflowing:
+            plain, has_icon = textfit.strip_markup(bullets[idx])
+            w = geo["col_w"] - (textfit.ICON_INDENT if has_icon
+                                else textfit.MARKER_INDENT)
+            lines = max(textfit.estimate_lines(plain, geo["font_pt"], w), 1)
+            needed = max(80, min(100, int(100 * geo["step"] / (lines * line_h))))
+            scale_slot = min(scale_slot, needed)
+    expected = min(scale_ratio, scale_slot) * 1000
     slide = _build_bullets(bullets)
     fits = _autofit_elements(slide)
     assert len(fits) == len(bullets)  # one per bullet text frame
-    expected = max(80, min(100, int(100 / ratio))) * 1000
     for el in fits:
         assert el.get("fontScale") == str(expected)
         assert el.get("lnSpcReduction") == "10000"
@@ -247,9 +368,9 @@ def test_builder_two_column_autofit():
     geo = builders.twocol_geometry()
     text = ((SENTENCE + " ") * 5)[:250].strip()
     bullets = [text] * 8
-    ratio, _ = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
-                                   geo["avail_h"], cols=geo["cols"],
-                                   step_in=geo["step"])
+    ratio, *_ = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
+                                    geo["avail_h"], cols=geo["cols"],
+                                    step_in=geo["step"])
     assert ratio > 1.0, f"test fixture drifted: ratio={ratio}"
     _, slides = parse_outline(
         "## Slide 1: T\n**Layout:** two-column-split\n"

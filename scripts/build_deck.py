@@ -556,7 +556,7 @@ def validate(slides, ctx, meta=None):
                    else builders.bullet_geometry())
             shown = p.get("bullets", [])[:geo["max"]]
             if shown:
-                ratio, _ = textfit.bullets_fit(
+                ratio, _, overflowing = textfit.bullets_fit(
                     shown, geo["font_pt"], geo["col_w"], geo["avail_h"],
                     cols=geo["cols"], step_in=geo["step"])
                 if ratio > 1.4:
@@ -567,6 +567,25 @@ def validate(slides, ctx, meta=None):
                     warnings.append(
                         f"{where}: slide ~{round(ratio * 100)}% of text "
                         "capacity — autofit will shrink text")
+                # Per-slot collision guard: non-terminal bullets that overflow
+                # their fixed y-step slot will render on top of the next bullet.
+                if overflowing and geo["step"] > 0:
+                    line_h = geo["font_pt"] * 1.2 / 72.0
+                    for idx in overflowing:
+                        plain, has_icon = textfit.strip_markup(shown[idx])
+                        w = geo["col_w"] - (textfit.ICON_INDENT if has_icon
+                                            else textfit.MARKER_INDENT)
+                        lines = max(
+                            textfit.estimate_lines(plain, geo["font_pt"], w), 1)
+                        sev = lines * line_h / geo["step"]
+                        msg = (
+                            f"{where}: bullet {idx + 1} wraps to ~{lines} lines "
+                            "and will collide with the next bullet — "
+                            "shorten it or split the slide")
+                        if sev > 1.8:
+                            errors.append(msg)
+                        else:
+                            warnings.append(msg)
             head = textfit.strip_markup(p.get("heading", ""))[0]
             if head:
                 h_w, h_pt = ((6.0, 30) if layout == "two-column-split"
