@@ -336,3 +336,172 @@ def test_append_multi_layout_master_pruned(example_deck, tmp_path):
         dst_ids = {int(e.get("id")) for e in
                    dst_master.findall("p:sldLayoutIdLst/p:sldLayoutId", NS)}
     assert not set(ids) & dst_ids
+
+
+# ── dangling slide-jump hyperlinks (extract / append) ───────────────────────
+
+def _rewrite_zip(path, replacements):
+    """Rewrite zip members in place. replacements: {name: bytes}."""
+    import io
+    buf = io.BytesIO()
+    with zipfile.ZipFile(path) as zin, \
+            zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+        pending = dict(replacements)
+        for item in zin.infolist():
+            data = pending.pop(item.filename, None)
+            if data is None:
+                data = zin.read(item.filename)
+            zout.writestr(item.filename, data)
+        for name, data in pending.items():
+            zout.writestr(name, data)
+    Path(path).write_bytes(buf.getvalue())
+
+
+def _inject_slide_jump(pptx, slide_name, rid, target_slide):
+    """Add an in-XML slide-jump hlinkClick (rid) + matching Relationship."""
+    from lxml import etree
+    from edit_deck import NS, SLIDE_RT
+    with zipfile.ZipFile(pptx) as zf:
+        slide_xml = etree.fromstring(zf.read(f"ppt/slides/{slide_name}"))
+        rels_xml = etree.fromstring(
+            zf.read(f"ppt/slides/_rels/{slide_name}.rels"))
+    rpr = slide_xml.find(".//a:rPr", NS)
+    assert rpr is not None
+    h = etree.SubElement(rpr, f"{{{NS['a']}}}hlinkClick")
+    h.set(f"{{{NS['r']}}}id", rid)
+    h.set("action", "ppaction://hlinksldjump")
+    rel = etree.SubElement(rels_xml, f"{{{NS['rel']}}}Relationship")
+    rel.set("Id", rid)
+    rel.set("Type", SLIDE_RT)
+    rel.set("Target", target_slide)
+    _rewrite_zip(pptx, {
+        f"ppt/slides/{slide_name}": etree.tostring(
+            slide_xml, xml_declaration=True, encoding="UTF-8",
+            standalone=True),
+        f"ppt/slides/_rels/{slide_name}.rels": etree.tostring(
+            rels_xml, xml_declaration=True, encoding="UTF-8",
+            standalone=True),
+    })
+
+
+def _assert_no_dangling_hlinks(pptx):
+    """Every hlinkClick/hlinkHover r:id in every slide exists in its rels."""
+    from lxml import etree
+    from edit_deck import NS
+    with zipfile.ZipFile(pptx) as zf:
+        slides = [n for n in zf.namelist()
+                  if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
+        for n in slides:
+            tree = etree.fromstring(zf.read(n))
+            rels_name = f"ppt/slides/_rels/{Path(n).name}.rels"
+            rel_ids = set()
+            if rels_name in zf.namelist():
+                rels = etree.fromstring(zf.read(rels_name))
+                rel_ids = {r.get("Id") for r in rels}
+            for tag in ("hlinkClick", "hlinkHover"):
+                for h in tree.iter(f"{{{NS['a']}}}{tag}"):
+                    rid = h.get(f"{{{NS['r']}}}id")
+                    assert not rid or rid in rel_ids, \
+                        f"{n}: {tag} references missing {rid}"
+
+
+def test_append_strips_dangling_hlink_click(tmp_path):
+    """Slide-jump to an unselected slide: rel dropped AND hlink stripped."""
+    from pptx import Presentation
+    from edit_deck import append_decks
+    dst = _simple_src_deck(tmp_path / "dst.pptx")
+    src = _simple_src_deck(tmp_path / "src.pptx")
+    _inject_slide_jump(src, "slide1.xml", "rId99", "slide2.xml")
+    merged = tmp_path / "merged.pptx"
+    assert append_decks(dst, src, "1", merged)  # slide 2 unselected
+    _assert_no_dangling_hlinks(merged)
+    prs = Presentation(str(merged))
+    assert len(prs.slides) == 3
+
+
+def test_extract_strips_dangling_hlink_click_and_warns(tmp_path, capsys):
+    """Kept slide jumping to a removed slide: rel + hlink stripped, WARN."""
+    from lxml import etree
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from edit_deck import extract, NS
+    prs = Presentation()
+    for label in ("One", "Two", "Three"):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        tb = slide.shapes.add_textbox(Inches(1), Inches(1),
+                                      Inches(6), Inches(1))
+        run = tb.text_frame.paragraphs[0].add_run()
+        run.text = label
+        run.font.size = Pt(24)
+    deck = tmp_path / "deck.pptx"
+    prs.save(str(deck))
+    _inject_slide_jump(deck, "slide1.xml", "rId99", "slide3.xml")
+
+    out = tmp_path / "sub.pptx"
+    assert extract(deck, "1", out)
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err
+
+    with zipfile.ZipFile(out) as zf:
+        rels_name = next(n for n in zf.namelist()
+                         if n.startswith("ppt/slides/_rels/"))
+        rels = etree.fromstring(zf.read(rels_name))
+        assert not any("slide3" in (r.get("Target") or "")
+                       for r in rels), "rels still target removed slide"
+    _assert_no_dangling_hlinks(out)
+    assert len(Presentation(str(out)).slides) == 1
+
+
+def test_append_media_name_collision_preserved(tmp_path):
+    """dst and src both carry ppt/media/image1.png with different bytes:
+    dst's original bytes stay under its name; src's land under a new one."""
+    from pptx import Presentation
+    from edit_deck import append_decks
+    dst = _simple_src_deck(tmp_path / "dst.pptx", with_image=True)
+    src = _simple_src_deck(tmp_path / "src.pptx", with_image=True)
+    src_bytes = _PNG_1PX + b"src-variant-trailing-bytes"
+    _rewrite_zip(src, {"ppt/media/image1.png": src_bytes})
+    with zipfile.ZipFile(dst) as zf:
+        dst_bytes = zf.read("ppt/media/image1.png")
+    assert dst_bytes != src_bytes
+
+    merged = tmp_path / "merged.pptx"
+    assert append_decks(dst, src, None, merged)
+    with zipfile.ZipFile(merged) as zf:
+        assert zf.read("ppt/media/image1.png") == dst_bytes
+        others = [n for n in zf.namelist()
+                  if n.startswith("ppt/media/") and n != "ppt/media/image1.png"]
+        assert any(zf.read(n) == src_bytes for n in others), \
+            "src image bytes missing from merged deck"
+    Presentation(str(merged))  # reopens cleanly
+
+
+def test_append_double_append_unique_parts(example_deck, tmp_path):
+    """Appending the same src twice: unique part names, unique master ids."""
+    from lxml import etree
+    from pptx import Presentation
+    from edit_deck import append_decks, NS
+    src = _simple_src_deck(tmp_path / "src.pptx")
+    m1 = tmp_path / "m1.pptx"
+    m2 = tmp_path / "m2.pptx"
+    assert append_decks(example_deck, src, None, m1)
+    assert append_decks(m1, src, None, m2)
+
+    with zipfile.ZipFile(m2) as zf:
+        names = zf.namelist()
+        assert len(names) == len(set(names))
+        pres = etree.fromstring(zf.read("ppt/presentation.xml"))
+        master_ids = [int(e.get("id")) for e in
+                      pres.findall("p:sldMasterIdLst/p:sldMasterId", NS)]
+        layout_ids = []
+        for n in names:
+            if (n.startswith("ppt/slideMasters/slideMaster")
+                    and n.endswith(".xml") and "_rels" not in n):
+                m = etree.fromstring(zf.read(n))
+                layout_ids += [int(e.get("id")) for e in
+                               m.findall("p:sldLayoutIdLst/p:sldLayoutId", NS)]
+    assert len(master_ids) == 3  # dst's own + two imports
+    all_ids = master_ids + layout_ids
+    assert len(all_ids) == len(set(all_ids)), "master/layout ids collide"
+    prs = Presentation(str(m2))
+    assert len(prs.slides) == 10  # 6 + 2 + 2

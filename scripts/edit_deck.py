@@ -426,6 +426,7 @@ def extract(pptx, selection, output):
         for pos in sorted(set(range(1, n + 1)) - keep, reverse=True):
             if not remove(work, pos):
                 return False
+        _strip_dangling_slide_links(work)
         _gc_unreferenced(work)
         if not pack(work, output):
             return False
@@ -476,14 +477,18 @@ def _new_part_name(dst_root, src_part, counters):
 
     'ppt/slideLayouts/slideLayout3.xml' → 'ppt/slideLayouts/slideLayout12.xml'
     (12 = max existing index in dst + copies already made this run + 1).
+    Extensionless filenames keep the whole name as the stem (no mangling).
     """
     d, fname = posixpath.dirname(src_part), posixpath.basename(src_part)
-    stem, _, ext = fname.rpartition(".")
+    if "." in fname:
+        stem, _, ext = fname.rpartition(".")
+    else:
+        stem, ext = fname, ""
     prefix = stem.rstrip("0123456789") or "part"
     key = (d, prefix.lower(), ext.lower())
     if key not in counters:
-        rx = re.compile(re.escape(prefix) + r"(\d+)\." + re.escape(ext) + r"$",
-                        re.IGNORECASE)
+        suffix = (r"\." + re.escape(ext) if ext else "") + r"$"
+        rx = re.compile(re.escape(prefix) + r"(\d+)" + suffix, re.IGNORECASE)
         mx = 0
         dst_dir = Path(dst_root) / d
         if dst_dir.is_dir():
@@ -493,7 +498,67 @@ def _new_part_name(dst_root, src_part, counters):
                     mx = max(mx, int(m.group(1)))
         counters[key] = mx
     counters[key] += 1
-    return f"{d}/{prefix}{counters[key]}.{ext}"
+    new_fname = (f"{prefix}{counters[key]}.{ext}" if ext
+                 else f"{prefix}{counters[key]}")
+    return f"{d}/{new_fname}"
+
+
+def _remove_hlink_elements(xml_path, rids):
+    """Strip <a:hlinkClick>/<a:hlinkHover> elements whose r:id is in rids.
+
+    Removes just the hlink element — its parent run/shape is untouched.
+    Used after a slide-jump Relationship is dropped, so the slide XML
+    doesn't reference an rId missing from its .rels. Returns count removed.
+    """
+    if not rids:
+        return 0
+    tree = _xml(xml_path)
+    doomed = [
+        el
+        for tag in ("hlinkClick", "hlinkHover")
+        for el in tree.getroot().iter(f"{{{NS['a']}}}{tag}")
+        if el.get(f"{{{NS['r']}}}id") in rids
+    ]
+    for el in doomed:
+        el.getparent().remove(el)
+    if doomed:
+        _write_xml(tree, xml_path)
+    return len(doomed)
+
+
+def _strip_dangling_slide_links(src_dir):
+    """Drop slide-jump rels whose Target slide no longer exists.
+
+    Used by extract after slide removals: a kept slide may carry a
+    hyperlink jump to a removed slide. Removes the Relationship and the
+    matching hlink elements from the slide XML; warns per stripped link.
+    """
+    root = Path(src_dir)
+    slides_dir = root / "ppt" / "slides"
+    if not slides_dir.is_dir():
+        return
+    for slide_xml in slides_dir.glob("slide*.xml"):
+        part = f"ppt/slides/{slide_xml.name}"
+        rels_p = _part_rels_path(root, part)
+        if not rels_p.exists():
+            continue
+        tree = _xml(rels_p)
+        dangling = set()
+        for rel in list(_iter_rels(tree)):
+            if rel.get("Type") != SLIDE_RT:
+                continue
+            if rel.get("TargetMode") == "External":
+                continue
+            target = _resolve_target(part, rel.get("Target"))
+            if not (root / target).exists():
+                print(f"  WARN: stripping dangling slide link "
+                      f"{rel.get('Id')} in {part} (target {target} "
+                      f"was removed)", file=sys.stderr)
+                dangling.add(rel.get("Id"))
+                rel.getparent().remove(rel)
+        if dangling:
+            _write_xml(tree, rels_p)
+            _remove_hlink_elements(slide_xml, dangling)
 
 
 def _copy_part_tree(state, src_part):
@@ -523,6 +588,7 @@ def _copy_part_tree(state, src_part):
     tree = _xml(src_rels)
     root = tree.getroot()
     is_master = src_part.startswith("ppt/slideMasters/")
+    dropped_rids = set()
     for rel in list(_iter_rels(tree)):
         if rel.get("TargetMode") == "External":
             continue
@@ -538,10 +604,15 @@ def _copy_part_tree(state, src_part):
         if rtype == SLIDE_RT and target not in state["selected"]:
             print(f"  WARN: dropping link from {src_part} to unselected "
                   f"{target}", file=sys.stderr)
+            dropped_rids.add(rel.get("Id"))
             root.remove(rel)
             continue
         new_target = _copy_part_tree(state, target)
         rel.set("Target", _relative_target(new_part, new_target))
+    if dropped_rids:
+        # The copied XML still carries <a:hlinkClick r:id="..."> pointing
+        # at the rIds just dropped — strip them so the part stays valid.
+        _remove_hlink_elements(dst_file, dropped_rids)
     if is_master:
         state["master_rels"][new_part] = tree  # written in _finalize_masters
     else:
