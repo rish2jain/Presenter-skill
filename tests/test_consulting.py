@@ -323,6 +323,35 @@ def test_heatmap_rag_defaults_on_all_builtin_palettes():
             assert _re.fullmatch(r"[0-9A-Fa-f]{6}", pal[key]), (name, key)
 
 
+def test_rag_colors_contrast_on_surface_all_palettes():
+    """rag_bad and rag_good must each achieve >= 3.0:1 contrast on the palette
+    surface color (driver-tree boxes render rag delta text at 12pt on surface).
+    """
+    from palettes import PALETTES
+
+    def _luminance(hex_str):
+        h = hex_str.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        def chan(c):
+            c = c / 255
+            return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+        return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+
+    def _contrast(h1, h2):
+        l1, l2 = sorted([_luminance(h1), _luminance(h2)], reverse=True)
+        return (l1 + 0.05) / (l2 + 0.05)
+
+    failures = []
+    for name, pal in PALETTES.items():
+        surf = pal["surface"]
+        for key in ("rag_bad", "rag_good"):
+            ratio = _contrast(pal[key], surf)
+            if ratio < 3.0:
+                failures.append(
+                    f"{name}: {key}={pal[key]} on surface={surf} → {ratio:.2f}:1 (<3.0)")
+    assert not failures, "RAG contrast failures:\n" + "\n".join(failures)
+
+
 def test_heatmap_validator_requires_numeric_table():
     md = """## Slide 1: Heatmap without any numeric body column must fail
 **Layout:** heatmap-table
@@ -639,6 +668,75 @@ def test_driver_tree_12_nodes_stays_in_canvas():
     assert not errors, errors
     slide = build_driver_tree_slide(_prs(), slides[0], PAL, CTX)
     EMU_IN = 914400
+    for s in slide.shapes:
+        assert s.left >= 0
+        assert (s.left + s.width) / EMU_IN <= 13.33 + 0.01
+        assert (s.top + s.height) / EMU_IN <= 7.5 + 0.01
+
+
+def test_driver_tree_depth3_centering():
+    """Depth-3 tree (root -> mid -> leaves): mid boxes are horizontally between
+    root and leaves; root center-y ≈ mean of its children's center-y; all boxes
+    stay within the 13.33 x 7.5 canvas."""
+    from builders_consulting import build_driver_tree_slide
+    md = """## Slide 1: Three-level cost decomposition shows labour as the driver
+**Layout:** driver-tree
+- Node: Id="root" Label="Total Cost" Value="$200M" Parent=""
+- Node: Id="mid1" Label="Labour" Value="$120M" Parent="root"
+- Node: Id="mid2" Label="Infra" Value="$80M" Parent="root"
+- Node: Id="leaf1" Label="Headcount" Value="$90M" Parent="mid1"
+- Node: Id="leaf2" Label="Contractors" Value="$30M" Parent="mid1"
+- Node: Id="leaf3" Label="Cloud" Value="$50M" Parent="mid2"
+- Node: Id="leaf4" Label="Facilities" Value="$30M" Parent="mid2"
+"""
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert not errors, errors
+    slide = build_driver_tree_slide(_prs(), slides[0], PAL, CTX)
+
+    EMU_IN = 914400
+
+    def _boxes(slide):
+        """Return {label_text: (left_in, center_y_in)} for all labeled boxes."""
+        result = {}
+        for s in slide.shapes:
+            if not getattr(s, "has_text_frame", False):
+                continue
+            txt = s.text_frame.text
+            left_in = s.left / EMU_IN
+            cy_in = (s.top + s.height / 2) / EMU_IN
+            result[txt] = (left_in, cy_in)
+        return result
+
+    boxes = _boxes(slide)
+
+    # Gather label-box lefts for representative nodes at each depth
+    root_left = min(l for (l, _) in [boxes[t] for t in boxes if "Total Cost" in t])
+    mid_lefts = [l for (l, _) in [boxes[t] for t in boxes
+                                  if t in ("Labour", "Infra")]]
+    leaf_lefts = [l for (l, _) in [boxes[t] for t in boxes
+                                   if t in ("Headcount", "Contractors",
+                                            "Cloud", "Facilities")]]
+    assert mid_lefts, "mid-node boxes not found"
+    assert leaf_lefts, "leaf boxes not found"
+    mid_left = min(mid_lefts)
+    leaf_left = min(leaf_lefts)
+
+    # Mid column is between root and leaves (horizontally)
+    assert root_left < mid_left < leaf_left, (
+        f"mid ({mid_left:.3f}) not between root ({root_left:.3f}) "
+        f"and leaf ({leaf_left:.3f})")
+
+    # Root center-y ≈ mean of its direct children's center-y (within 0.15in)
+    root_cy = next(cy for (_, cy) in [boxes[t] for t in boxes
+                                      if "Total Cost" in t])
+    mid_cys = [cy for (_, cy) in [boxes[t] for t in boxes
+                                   if t in ("Labour", "Infra")]]
+    mean_mid_cy = sum(mid_cys) / len(mid_cys)
+    assert abs(root_cy - mean_mid_cy) < 0.15, (
+        f"root center_y {root_cy:.3f} not near mean of children {mean_mid_cy:.3f}")
+
+    # All boxes within canvas
     for s in slide.shapes:
         assert s.left >= 0
         assert (s.left + s.width) / EMU_IN <= 13.33 + 0.01

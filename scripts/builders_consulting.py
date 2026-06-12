@@ -8,6 +8,7 @@ rescale to the actual slide size.
 """
 import re
 
+from pptx.enum.shapes import MSO_CONNECTOR
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
@@ -967,7 +968,6 @@ def _football_marker(slide, p, pal, top, bottom, vx, gmin, gmax):
              f"[{gmin:g}, {gmax:g}] — skipped")
         return
     from pptx.enum.dml import MSO_LINE_DASH_STYLE
-    from pptx.enum.shapes import MSO_CONNECTOR
     from palettes import hex_rgb
     x = vx(value)
     l, t, _, h = B._sc(x, top - 0.12, 0, bottom - top + 0.12)
@@ -1081,6 +1081,9 @@ def _tree_box(slide, pal, node, x, y, col_w, box_h):
         B.add_tb(slide, node.get("label", node["id"]), x + 0.16, ty,
                  col_w - 1.9, 0.3, size=11, bold=True, color=pal["text"],
                  font=pal["font_body"])
+        # label box ends at (x + col_w - 1.74in); value box starts at
+        # (x + col_w - 1.78in) — intentional 0.04in overlap so text regions
+        # butt against each other without a visible gap at compact density.
         B.add_tb(slide, node.get("value", ""), x + col_w - 1.78, ty, 0.95,
                  0.3, size=11, color=pal["text_muted"], align=PP_ALIGN.RIGHT,
                  font=pal["font_body"])
@@ -1092,7 +1095,6 @@ def _tree_box(slide, pal, node, x, y, col_w, box_h):
 
 def _tree_connectors(slide, pal, children, depths, ys, col_w, gap):
     """Elbow connectors parent right edge -> child left edge, text_muted."""
-    from pptx.enum.shapes import MSO_CONNECTOR
     from palettes import hex_rgb
     for par, kids in children.items():
         if par not in depths:
@@ -1125,7 +1127,6 @@ def build_stakeholder_map_slide(prs, p, pal, ctx):
     slide = build_matrix_slide(prs, q, pal, ctx)
 
     L, T, W, H = 2.0, 1.85, 9.6, 4.6  # build_matrix_slide plot area
-    from pptx.enum.shapes import MSO_CONNECTOR
     from charts import add_arrowhead_to_connector
     from palettes import hex_rgb
 

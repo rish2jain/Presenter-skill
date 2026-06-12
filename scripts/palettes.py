@@ -44,6 +44,9 @@ PALETTES = {
         "text": "F0FDFA", "text_muted": "8CCFC6",
         "dark": True,
         "font_title": "Gill Sans MT", "font_body": "Calibri", "font_label": "Calibri Light",
+        # rag_bad override: default C0504D gives only 2.46:1 on this surface;
+        # D95F5B clears 3.0:1 (3.14:1) for 12pt text on driver-tree boxes.
+        "rag_bad": "D95F5B",
     },
     "charcoal-minimal": {  # design, architecture, monochrome minimal
         "bg": "1C1C1E", "bg_deep": "111113", "surface": "2A2A2E",
@@ -58,6 +61,9 @@ PALETTES = {
         "text": "F0F9FF", "text_muted": "94C6E0",
         "dark": True,
         "font_title": "Gill Sans MT", "font_body": "Calibri", "font_label": "Calibri Light",
+        # rag_bad override: default C0504D gives only 2.34:1 on this surface;
+        # D86A68 clears 3.0:1 (3.22:1) for 12pt text on driver-tree boxes.
+        "rag_bad": "D86A68",
     },
     # ── Light themes (backgrounds intentionally never pure #FFFFFF) ─────────
     "swiss-light": {  # corporate, education, tutorials
