@@ -147,7 +147,7 @@ def check_page_sequence(prs, issues):
         if v2 - v1 != n2 - n1:
             issues["error"].append(
                 f"Slide {n2}: page-number sequence broken "
-                f"({v1} on slide {n1}, then {v2} {n2 - n1} slide(s) later)")
+                f"({v1} on slide {n1}, then {v2}, {n2 - n1} slide(s) later)")
 
 
 def check_axis_scales(prs, issues):

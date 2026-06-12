@@ -35,6 +35,29 @@ def test_handout_bullets_and_source():
     assert "> Talk track: Set up the problem." in out
 
 
+def test_handout_strips_rich_markup():
+    out = gen_handout(
+        "## Slide 1: Costs have outgrown revenue for three years\n"
+        "- icon:trending-up **Cost CAGR 12%** against revenue\n"
+        "- {accent}Revenue CAGR 4%{/} across three years\n"
+        "- Notes: n.\n")
+    assert "- Cost CAGR 12% against revenue" in out
+    assert "- Revenue CAGR 4% across three years" in out
+    assert "{accent}" not in out and "{/}" not in out
+    assert "**Cost" not in out
+
+
+def test_handout_kicker_emitted_as_takeaway():
+    out = gen_handout(
+        "## Slide 1: Costs have outgrown revenue for three years\n"
+        "- Cost CAGR 12%\n"
+        "- Kicker: {accent}Act now{/} or margins erode further\n"
+        "- Notes: n.\n")
+    assert "**Takeaway:** Act now or margins erode further" in out
+    # kicker follows the bullets
+    assert out.index("- Cost CAGR 12%") < out.index("**Takeaway:**")
+
+
 def test_handout_table_rows_reemitted():
     out = gen_handout(
         "## Slide 1: Title here\n**Layout:** title\n- Title: Deck\n\n"

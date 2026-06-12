@@ -163,6 +163,9 @@ def test_auto_agenda_track_inserts_tracker_slides():
                        "bullet-list"], layouts
     trackers = [s for s in out if s["layout"] == "agenda" and s.get("current")]
     assert [t["current"] for t in trackers] == ["Diagnosis", "Plan"]
+    # headings stay unique per tracker (qa_check duplicate-title rule)
+    assert [t["heading"] for t in trackers] == \
+        ["Where we are — Diagnosis", "Where we are — Plan"]
     assert out[1]["bullets"] == ["Diagnosis", "Plan"]
 
 

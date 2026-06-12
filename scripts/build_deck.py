@@ -262,7 +262,9 @@ def _agenda_slide(sections, current=None):
              "notes": "Auto-generated agenda tracker.", "_auto": True}
     if current:
         slide["current"] = current
-        slide["heading"] = "Where we are"
+        # Include the section so repeated trackers keep unique titles
+        # (qa_check --accessibility flags duplicate slide titles).
+        slide["heading"] = f"Where we are — {current}"
     return slide
 
 

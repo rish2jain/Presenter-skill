@@ -205,6 +205,8 @@ deduplicated within one append run.
   their source geometry on the destination's slide size — check visually.
 - Slide-to-slide hyperlinks pointing outside the copied selection are
   dropped (a warning is printed).
+- Appended slides keep their original baked page numbers — re-number via
+  `inventory`/`replace` if needed.
 
 After any merge, run the standard QA gate (`qa_check.py`, render review) —
 and flip through the seam slides specifically.

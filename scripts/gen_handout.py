@@ -11,7 +11,6 @@ transformation (slides -> numbered sections, **Data:** -> tables, notes ->
 'Talk track' blockquotes, sources -> italics); no .pptx is touched.
 """
 import argparse
-import re
 import sys
 from pathlib import Path
 
@@ -19,8 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from build_deck import (apply_auto_agenda, apply_references, load_data_files,
                         parse_outline)
+from textfit import strip_markup
 
-ICON_RE = re.compile(r"^icon:[\w-]+\s+")
+
+def _clean(text):
+    """Plain-text form: drop icon: prefix and rich markers (**…**,
+    {accent}…{/}) — deck-only markup that would render literally here."""
+    return strip_markup(text)[0]
 
 
 def _fmt_value(v):
@@ -63,11 +67,14 @@ def _data_table(slide):
 
 
 def _slide_section(p):
-    """Body lines for one slide: bullets, data table, table, notes, source."""
+    """Body lines for one slide: bullets, kicker, data table, table, notes,
+    source."""
     blocks = []
-    bullets = [ICON_RE.sub("", b) for b in p.get("bullets", [])]
+    bullets = [_clean(b) for b in p.get("bullets", [])]
     if bullets:
         blocks.append([f"- {b}" for b in bullets])
+    if p.get("kicker"):
+        blocks.append([f"**Takeaway:** {_clean(p['kicker'])}"])
     data_table = _data_table(p)
     if data_table:
         blocks.append(data_table)
@@ -98,15 +105,16 @@ def gen_handout(md_text, ctx=None):
         if p.get("_auto") and p.get("layout") == "agenda":
             continue
         if n == 1:
-            out.append(f"# {p.get('title') or p.get('heading', 'Presentation')}")
+            out.append(
+                f"# {_clean(p.get('title') or p.get('heading', 'Presentation'))}")
             if p.get("subtitle"):
-                out += ["", p["subtitle"]]
+                out += ["", _clean(p["subtitle"])]
             if p.get("layout") == "title":
                 continue  # consumed as the document title
         if p.get("_appendix") and not in_appendix:
             out += ["", "---", "", "# Appendix"]
             in_appendix = True
-        heading = p.get("heading") or p.get("title", "")
+        heading = _clean(p.get("heading") or p.get("title", ""))
         out += ["", f"## {n}. {heading}".rstrip()]
         out += _slide_section(p)
     return "\n".join(out).rstrip() + "\n"

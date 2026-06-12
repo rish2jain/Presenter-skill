@@ -16,14 +16,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from build_deck import parse_outline  # noqa: E402
+from build_deck import (apply_auto_agenda, apply_references,  # noqa: E402
+                        load_data_files, parse_outline)
+from textfit import strip_markup  # noqa: E402
 
 PLACEHOLDER_RX = re.compile(
     r"lorem|ipsum|xxxx|click to add|\[ add visual \]|this page layout", re.I)
 
 
 def _normalize(text):
-    return re.sub(r"\s+", " ", (text or "").lower()).strip()
+    # Drop icon: prefixes and rich-text markers (**…**, {accent}…{/}) —
+    # they never appear in the rendered deck text.
+    plain, _ = strip_markup(text or "")
+    return re.sub(r"\s+", " ", plain.lower()).strip()
 
 
 def _slide_expected_text(slide):
@@ -85,7 +90,15 @@ def extract_pptx_texts(pptx_path):
 
 
 def diff_outline(outline_path, pptx_path, strict=False):
-    _, slides = parse_outline(Path(outline_path).read_text(encoding="utf-8"))
+    outline_path = Path(outline_path)
+    meta, slides = parse_outline(outline_path.read_text(encoding="utf-8"))
+    # Mirror the transform sequence build() applies so slide positions line
+    # up (Auto-Agenda / References insert slides; Data-File fills data).
+    ctx = {"outline_dir": outline_path.parent, "assets_dir": Path("assets"),
+           "template_path": None}
+    load_data_files(slides, ctx)  # resolution errors are build's concern
+    slides = apply_auto_agenda(meta, slides)
+    slides = apply_references(meta, slides)
     built = extract_pptx_texts(pptx_path)
     errors, warnings = [], []
 
