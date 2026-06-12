@@ -116,7 +116,7 @@ Files: same as T4.
   C=accent3, I=muted). Validation *warning* when a row has zero or 2+ `A`s ("exactly one
   Accountable per activity").
 
-## T6. Section tracker tabs — `[ ]`
+## T6. Section tracker tabs — `[x]`
 
 Files: `scripts/build_deck.py`, `scripts/builders.py`, `references/generation-guide.md`,
 `tests/test_build_deck.py`.

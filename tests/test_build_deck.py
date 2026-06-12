@@ -300,3 +300,152 @@ def test_quoted_heading_attr_warns(capsys):
     from build_deck import parse_outline
     parse_outline('## Slide 1: T {layout="waterfall"}\n- b\n')
     assert "did not parse" in capsys.readouterr().err
+
+
+# ── Tracker tabs (T6) ────────────────────────────────────────────────────────
+TRACKER_MD = """**Tracker:** tabs
+
+## Slide 1: Acme FY27 Strategy
+**Layout:** title
+- Title: Acme FY27 Strategy
+
+## Slide 2: Diagnosis
+**Layout:** section-divider
+
+## Slide 3: Costs have outgrown revenue for three years
+- Cost CAGR 12% vs revenue 4%
+- Notes: n.
+
+## Slide 4: Plan
+**Layout:** section-divider
+
+## Slide 5: Three levers close the gap by FY27
+- Tiering, exit, discounts
+- Notes: n.
+"""
+
+
+def _round_chips(slide):
+    from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
+    return [sh for sh in slide.shapes
+            if sh.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+            and sh.auto_shape_type == MSO_SHAPE.ROUNDED_RECTANGLE]
+
+
+def _slide_texts(slide):
+    return [sh.text_frame.text for sh in slide.shapes
+            if getattr(sh, "has_text_frame", False)]
+
+
+def test_tracker_tabs_render_chips(tmp_path):
+    from build_deck import build
+    from palettes import get_palette
+    from pptx import Presentation
+    from pptx.enum.dml import MSO_FILL
+    from pptx.dml.color import RGBColor
+    md = tmp_path / "o.md"
+    md.write_text(TRACKER_MD)
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    chips = _round_chips(prs.slides[2])  # first content slide (Diagnosis)
+    assert len(chips) == 2, "one chip per section"
+    filled = [c for c in chips if c.fill.type == MSO_FILL.SOLID]
+    assert len(filled) == 1, "exactly one (current) chip is filled"
+    accent1 = get_palette("")["accent1"]
+    assert filled[0].fill.fore_color.rgb == RGBColor.from_string(accent1)
+    texts = _slide_texts(prs.slides[2])
+    assert "Diagnosis" in texts and "Plan" in texts
+
+
+def test_tracker_tabs_current_chip_moves(tmp_path):
+    from build_deck import build
+    from pptx import Presentation
+    from pptx.enum.dml import MSO_FILL
+    md = tmp_path / "o.md"
+    md.write_text(TRACKER_MD)
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    chips = _round_chips(prs.slides[4])  # content slide in section "Plan"
+    filled = [c for c in chips if c.fill.type == MSO_FILL.SOLID]
+    assert len(chips) == 2 and len(filled) == 1
+    # the filled chip is the right-most one (Plan is the last section)
+    assert filled[0].left == max(c.left for c in chips)
+
+
+def test_tracker_tabs_truncate_long_names(tmp_path):
+    from build_deck import build
+    from pptx import Presentation
+    md = tmp_path / "o.md"
+    md.write_text(TRACKER_MD.replace(
+        "## Slide 4: Plan", "## Slide 4: Commercial Excellence Program"))
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    texts = _slide_texts(prs.slides[2])
+    assert "Commercial Exc…" in texts, texts
+
+
+def test_tracker_tabs_many_sections_fall_back(tmp_path, capsys):
+    from build_deck import build
+    from pptx import Presentation
+    parts = ["**Tracker:** tabs\n"]
+    n = 1
+    for s in range(1, 7):
+        parts.append(f"## Slide {n}: Section {s}\n**Layout:** section-divider\n")
+        n += 1
+        parts.append(f"## Slide {n}: Content slide for section {s} here\n"
+                     "- a bullet\n- Notes: n.\n")
+        n += 1
+    md = tmp_path / "o.md"
+    md.write_text("\n".join(parts))
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    err = capsys.readouterr().err
+    assert err.count("exceed tab budget") == 1, "warn exactly once per build"
+    prs = Presentation(str(out))
+    content = prs.slides[1]  # first content slide
+    assert not _round_chips(content)
+    assert any("1/6 · Section 1" in t for t in _slide_texts(content))
+
+
+def test_tracker_tabs_without_dividers_warns():
+    from build_deck import parse_outline, validate
+    meta, slides = parse_outline(
+        "**Tracker:** tabs\n\n"
+        "## Slide 1: Costs have outgrown revenue for years\n"
+        "- a bullet\n- Notes: n.\n")
+    _, warnings = validate(slides, CTX, meta)
+    assert any("Tracker" in w for w in warnings), warnings
+
+
+def test_tracker_tabs_appendix_keeps_backup_label(tmp_path):
+    from build_deck import build
+    from pptx import Presentation
+    md = tmp_path / "o.md"
+    md.write_text(TRACKER_MD + """
+## Appendix
+
+## Slide 6: Backup cost detail by region here
+- detail
+""")
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    backup = prs.slides[5]
+    assert not _round_chips(backup)
+    assert "BACKUP" in _slide_texts(backup)
+
+
+def test_tracker_tabs_skips_auto_agenda_slides(tmp_path):
+    from build_deck import build
+    from pptx import Presentation
+    md = tmp_path / "o.md"
+    md.write_text("**Auto-Agenda:** track\n" + TRACKER_MD)
+    out = tmp_path / "d.pptx"
+    assert build(str(md), str(out))
+    prs = Presentation(str(out))
+    # slide order: title, agenda, divider, agenda(track), content, ...
+    assert not _round_chips(prs.slides[3]), "auto agenda slide gets no tab strip"
+    assert len(_round_chips(prs.slides[4])) == 2, "content slide keeps tabs"

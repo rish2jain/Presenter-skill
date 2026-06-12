@@ -383,6 +383,14 @@ both are present.
   the current section highlighted after every section divider.
 - `**Stamp:** DRAFT` — bordered status tag on every slide (also:
   CONFIDENTIAL, FOR DISCUSSION).
+- `**Tracker:** tabs` — replaces the plain-text section label on content
+  slides with a compact tab strip top-right: one small chip per section,
+  current section filled, the rest outlined (names truncated to 14 chars).
+  Requires section dividers (`--check` warns and the build falls back to
+  the plain label without them). With 6+ sections, or when the strip would
+  outgrow its budget, slides get a compact "n/N · Section" text instead
+  (one build warning). Auto-inserted agenda slides and appendix slides
+  (BACKUP) keep their existing labels. Compatible with `**Auto-Agenda:**`.
 
 **Per-slide tags:**
 - `- Sticker: ILLUSTRATIVE` — small bordered tag top-right (free text,

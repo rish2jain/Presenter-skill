@@ -8,13 +8,14 @@ Builder signature: build_x(prs, p, pal, ctx) -> slide
 """
 import re
 
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
 from charts import add_native_chart
-from helpers import (add_picture_cover, add_soft_shadow, parse_visual,
-                     resolve_image_path, set_fill_alpha, set_slide_bg_gradient,
-                     warn)
+from helpers import (_add_filled_shape, add_picture_cover, add_soft_shadow,
+                     parse_visual, resolve_image_path, set_fill_alpha,
+                     set_slide_bg_gradient, warn)
 from helpers import add_circle as _add_circle
 from helpers import add_overlay as _add_overlay
 from helpers import add_picture_contain as _add_picture_contain
@@ -80,6 +81,11 @@ def add_tb(slide, text, left, top, w, h, size=16, **kw):
 
 def add_rect(slide, left, top, w, h, *args, **kw):
     return _add_rect(slide, *_sc(left, top, w, h), *args, **kw)
+
+
+def add_round_rect(slide, left, top, w, h, *args, **kw):
+    return _add_filled_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE,
+                             *_sc(left, top, w, h), *args, **kw)
 
 
 def add_overlay(slide, left, top, w, h, *args, **kw):

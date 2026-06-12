@@ -90,7 +90,8 @@ META_KEYS = {"Palette": "palette", "Footer": "footer",
               "Density": "density", "Purpose": "purpose",
               "Variant": "variant", "Motif": "motif", "Takeaway": "takeaway",
               "Exhibits": "exhibits", "Auto-Agenda": "auto_agenda",
-              "Stamp": "stamp", "Scale-Group": "scale_group"}
+              "Stamp": "stamp", "Scale-Group": "scale_group",
+              "Tracker": "tracker"}
 
 
 def parse_outline(md_text):
@@ -448,6 +449,12 @@ def validate(slides, ctx, meta=None):
     if deck_pal and deck_pal not in PALETTES:
         warnings.append(f"unknown deck palette '{deck_pal}' — default will be used")
 
+    if meta.get("tracker", "").lower() == "tabs" and not any(
+            p.get("layout") == "section-divider" and not p.get("_appendix")
+            for p in slides):
+        warnings.append("**Tracker:** tabs needs section-divider slides — "
+                        "falling back to the plain section label")
+
     for n, p in enumerate(slides, 1):
         where = f"Slide {n} (line {p['_line']})" if p.get("_line") else f"Slide {n}"
         layout = p.get("layout", "bullet-list")
@@ -796,6 +803,57 @@ def _add_section_tracker(slide, pal, section):
                     align=PP_ALIGN.RIGHT)
 
 
+# Tab strip geometry (design-space inches; builders rescale for 4:3 etc.)
+TAB_RIGHT_EDGE = 12.63
+TAB_Y, TAB_H, TAB_GAP = 0.12, 0.30, 0.08
+TAB_STRIP_MAX_W = 5.5   # over this (or 6+ sections) -> compact text form
+TAB_LABEL_CHARS = 14
+
+
+def _tab_label(name):
+    return name[:TAB_LABEL_CHARS] + "…" if len(name) > TAB_LABEL_CHARS else name
+
+
+def _add_tracker_tabs(slide, pal, sections, current, state):
+    """**Tracker:** tabs — chip-per-section strip top-right; current section
+    chip filled accent1, others outlined muted. Too many sections -> compact
+    'n/N · Section' text at the plain-label position (warn once per build)."""
+    import builders
+    from pptx.enum.text import PP_ALIGN
+    labels = [_tab_label(s) for s in sections]
+    widths = [max(0.7, 0.09 * len(lb) + 0.25) for lb in labels]
+    total = sum(widths) + TAB_GAP * (len(widths) - 1)
+    if len(sections) >= 6 or total > TAB_STRIP_MAX_W:
+        if not state.get("warned"):
+            warn(f"Tracker tabs: {len(sections)} sections exceed tab budget "
+                 "— using compact text form")
+            state["warned"] = True
+        n = sections.index(current) + 1 if current in sections else 0
+        builders.add_tb(slide, f"{n}/{len(sections)} · {current}",
+                        7.6, 0.12, 5.0, 0.32, size=11, bold=True,
+                        color=pal["text_muted"], font=pal["font_label"],
+                        align=PP_ALIGN.RIGHT)
+        return
+    x = TAB_RIGHT_EDGE
+    for label, w, sec in reversed(list(zip(labels, widths, sections))):
+        x -= w
+        if sec == current:
+            builders.add_round_rect(slide, x, TAB_Y, w, TAB_H, pal["accent1"])
+            builders.add_tb(slide, label, x, TAB_Y + 0.02, w, TAB_H - 0.02,
+                            size=10, bold=True, color=pal["bg"],
+                            font=pal["font_label"], align=PP_ALIGN.CENTER)
+        else:
+            chip = builders.add_round_rect(slide, x, TAB_Y, w, TAB_H,
+                                           pal["bg"],
+                                           line_hex=pal["text_muted"],
+                                           line_pt=0.75)
+            chip.fill.background()  # outline only — works on any background
+            builders.add_tb(slide, label, x, TAB_Y + 0.02, w, TAB_H - 0.02,
+                            size=10, color=pal["text_muted"],
+                            font=pal["font_label"], align=PP_ALIGN.CENTER)
+        x -= TAB_GAP
+
+
 def _add_sticker(slide, pal, text, below_section=False):
     """Per-slide bordered status tag (ILLUSTRATIVE, PRELIMINARY...) top-right;
     drops below the section tracker label when both are present."""
@@ -909,6 +967,11 @@ def build(outline_path, output_path, palette_key=None,
     failures = 0
     built_slides = []
     current_section = None
+    sections = [s.get("heading") or s.get("title", "") for s in slides_data
+                if s.get("layout") == "section-divider"
+                and not s.get("_appendix")]
+    tracker_tabs = meta.get("tracker", "").lower() == "tabs" and bool(sections)
+    tab_state = {}  # warn-once flag for the tab-budget fallback
     for i, p in enumerate(slides_data):
         pal = get_palette(p["palette"]) if "palette" in p else pal_default
         layout_name = p.get("layout", "bullet-list")
@@ -933,7 +996,12 @@ def build(outline_path, output_path, palette_key=None,
             if not templated and layout_name not in NO_FOOTER_LAYOUTS:
                 _add_footer(slide, i, pal, footer, page_numbers,
                             appendix=p.get("_appendix", False))
-                _add_section_tracker(slide, pal, section_label)
+                if tracker_tabs and section_label \
+                        and not p.get("_appendix") and not p.get("_auto"):
+                    _add_tracker_tabs(slide, pal, sections, section_label,
+                                      tab_state)
+                else:
+                    _add_section_tracker(slide, pal, section_label)
                 if p.get("kicker"):
                     _add_kicker_box(slide, pal, p["kicker"])
             if not templated and p.get("sticker"):
