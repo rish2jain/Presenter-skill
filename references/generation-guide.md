@@ -408,6 +408,14 @@ headings over 15 words, exhibit headings (chart visuals, waterfall, mekko,
 bar-mekko, chart-callout) with no number, and headings joining two messages
 with " and " are flagged.
 
+**Overflow guard (`--check` + build):** bullet-list and two-column-split
+text is measured (PIL glyph metrics when available, else a calibrated
+char-width estimate) against the layout's vertical budget. 100–140% of
+capacity warns and the build writes a `normAutofit` shrink hint (floor 80%
+font scale) so text scales down instead of spilling; over 140% is a
+`--check` **error** — split the slide or cut copy. Headings predicted to
+wrap past 2 lines also warn.
+
 **AI-tell lint (`pptx_lint.py`):** thin accent lines under titles and long
 centered body copy — both hallmarks of AI-generated decks — are warned on
 any .pptx, including imported ones.

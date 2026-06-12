@@ -547,6 +547,34 @@ def validate(slides, ctx, meta=None):
         if len(p.get("bullets", [])) > cap:
             warnings.append(f"{where}: {len(p['bullets'])} bullets — only the "
                             f"first {cap} render; split the slide")
+
+        # Overflow guard: estimated text height vs the layout's vertical
+        # budget (catches long bullets; the bullet-count cap catches many).
+        if layout in ("bullet-list", "bullets", "two-column-split"):
+            import textfit
+            geo = (builders.twocol_geometry() if layout == "two-column-split"
+                   else builders.bullet_geometry())
+            shown = p.get("bullets", [])[:geo["max"]]
+            if shown:
+                ratio, _ = textfit.bullets_fit(
+                    shown, geo["font_pt"], geo["col_w"], geo["avail_h"],
+                    cols=geo["cols"], step_in=geo["step"])
+                if ratio > 1.4:
+                    errors.append(
+                        f"{where}: text overflows layout capacity "
+                        f"(~{round(ratio * 100)}%) — split the slide or cut copy")
+                elif ratio > 1.0:
+                    warnings.append(
+                        f"{where}: slide ~{round(ratio * 100)}% of text "
+                        "capacity — autofit will shrink text")
+            head = textfit.strip_markup(p.get("heading", ""))[0]
+            if head:
+                h_w, h_pt = ((6.0, 30) if layout == "two-column-split"
+                             else (11.9, 32))
+                h_lines = textfit.estimate_lines(head, h_pt, h_w, bold=True)
+                if h_lines > 2:
+                    warnings.append(f"{where}: title wraps to ~{h_lines} "
+                                    "lines — shorten the heading")
         if layout == "stat-callout" and not p.get("stats"):
             errors.append(f"{where}: stat-callout requires "
                           '\'- Value="..." Label="..." Sublabel="..."\' lines')

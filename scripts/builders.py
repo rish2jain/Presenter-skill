@@ -60,6 +60,45 @@ def density():
     return DENSITY_TABLE[_DENSITY["mode"]]
 
 
+# Bullet text must clear the footer zone (footer/page number at y=7.08).
+BULLET_BOTTOM = 7.0
+
+
+def bullet_geometry():
+    """bullet-list text geometry, shared with build_deck.validate's overflow
+    check so the capacity budget can't drift from the builder."""
+    d = density()
+    cols = d.get("bullet_cols", 1)
+    gap = 0.4
+    return {"cols": cols, "gap": gap,
+            "col_w": (11.93 - gap * (cols - 1)) / cols,
+            "font_pt": d["bullet_size"], "step": d["bullet_step"],
+            "avail_h": BULLET_BOTTOM - d["bullet_y"], "max": d["bullet_max"]}
+
+
+def twocol_geometry():
+    """two-column-split bullet geometry (single text column beside the visual)."""
+    d = density()
+    return {"cols": 1, "gap": 0.0, "col_w": 6.1,
+            "font_pt": d["twocol_size"], "step": d["twocol_step"],
+            "avail_h": BULLET_BOTTOM - 1.74, "max": d["twocol_max"]}
+
+
+def _autofit_overflow(boxes, bullets, geo):
+    """Bullet block over capacity: shrink text via normAutofit (floor 80%)."""
+    if not bullets:
+        return
+    import textfit
+    ratio, _ = textfit.bullets_fit(bullets, geo["font_pt"], geo["col_w"],
+                                   geo["avail_h"], cols=geo["cols"],
+                                   step_in=geo["step"])
+    if ratio <= 1.0:
+        return
+    scale = max(80, min(100, int(100 / ratio)))
+    for tb in boxes:
+        textfit.apply_autofit(tb.text_frame, scale)
+
+
 def set_canvas(prs):
     _SCALE["x"] = prs.slide_width / Inches(1) / SLIDE_W
     _SCALE["y"] = prs.slide_height / Inches(1) / SLIDE_H
@@ -345,21 +384,23 @@ def build_bullet_slide(prs, p, pal, ctx):
     d = density()
     slide = _blank_slide(prs, pal, pal["bg"])
     _heading(slide, p, pal)
-    bullets = p.get("bullets", [])[:d["bullet_max"]]
-    cols = d.get("bullet_cols", 1)
+    geo = bullet_geometry()
+    bullets = p.get("bullets", [])[:geo["max"]]
+    cols = geo["cols"]
     per_col = -(-len(bullets) // cols) if bullets else 1
-    col_gap = 0.4
-    col_w = (11.93 - col_gap * (cols - 1)) / cols
+    col_w = geo["col_w"]
+    boxes = []
     for i, bullet in enumerate(bullets):
         icon, text = split_icon(bullet)
         col, row = divmod(i, per_col)  # column-major: read down, then across
-        x0 = 0.7 + col * (col_w + col_gap)
+        x0 = 0.7 + col * (col_w + geo["gap"])
         y = d["bullet_y"] + row * d["bullet_step"]
         text_x = _draw_marker(slide, pal, ctx, icon, x0, y)
-        add_tb(slide, text, text_x, y - 0.06, x0 + col_w - text_x,
-               d["bullet_step"] - 0.06,
-               size=d["bullet_size"], color=pal["text"], font=pal["font_body"],
-               accent=pal["accent1"])
+        boxes.append(add_tb(slide, text, text_x, y - 0.06, x0 + col_w - text_x,
+                            d["bullet_step"] - 0.06,
+                            size=d["bullet_size"], color=pal["text"],
+                            font=pal["font_body"], accent=pal["accent1"]))
+    _autofit_overflow(boxes, bullets, geo)
     return slide
 
 
@@ -368,15 +409,18 @@ def build_two_column_slide(prs, p, pal, ctx):
     add_tb(slide, p.get("heading", ""), 0.7, 0.55, 6.0, 1.1,
            size=30, bold=True, color=pal["accent1"], font=pal["font_title"])
     d = density()
-    bullets = p.get("bullets", [])[:d["twocol_max"]]
+    geo = twocol_geometry()
+    bullets = p.get("bullets", [])[:geo["max"]]
+    boxes = []
     for i, bullet in enumerate(bullets):
         icon, text = split_icon(bullet)
         y = 1.74 + i * d["twocol_step"]
         text_x = _draw_marker(slide, pal, ctx, icon, 0.7, y)
-        add_tb(slide, text, text_x, y - 0.06, 6.8 - text_x,
-               d["twocol_step"] - 0.08,
-               size=d["twocol_size"], color=pal["text"], font=pal["font_body"],
-               accent=pal["accent1"])
+        boxes.append(add_tb(slide, text, text_x, y - 0.06, 6.8 - text_x,
+                            d["twocol_step"] - 0.08,
+                            size=d["twocol_size"], color=pal["text"],
+                            font=pal["font_body"], accent=pal["accent1"]))
+    _autofit_overflow(boxes, bullets, geo)
     _place_visual(slide, prs, p, pal, ctx, 6.9, 0.9, 6.0, 5.9)
     return slide
 

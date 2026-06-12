@@ -155,7 +155,7 @@ Files: `scripts/qa_check.py`, `scripts/pptx_lint.py`, new `scripts/geometry_repo
   `--json` for tooling. Document in qa-guide as QA step 1.5 (run before rendering;
   feed output to the fix loop).
 
-## T8. Build-time overflow guard (capacity budgets + autofit) — `[ ]`
+## T8. Build-time overflow guard (capacity budgets + autofit) — `[x]`
 
 Files: `scripts/builders.py` (or new `scripts/textfit.py`), `scripts/build_deck.py`
 (validation), `tests/test_textfit.py`.
