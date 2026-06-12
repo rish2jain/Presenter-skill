@@ -75,3 +75,136 @@ Addresses are slideN.xml file numbers (these differ from deck position
 after a reorder — correlate with the `list` subcommand). Run formatting
 (bold/size/color) is preserved — only the text changes. Then run the
 standard Phase 4 QA on the result.
+
+## Slide operations playbook
+
+Precise recipes for common edit requests, built from the existing
+primitives. Nothing here needs new tooling — the discipline is in the
+sequencing.
+
+### condense / rewrite / formalize / translate
+
+All four are the same mechanical recipe — only the text you write differs
+(shorter, reworded, formal register, target language):
+
+```bash
+python3 scripts/edit_deck.py unpack deck.pptx work/
+python3 scripts/edit_deck.py inventory work/ > inventory.json
+```
+
+Inventory output (snippet) — every text run with its stable address:
+
+```json
+[
+  {"slide": 2, "run": 0, "text": "Three priorities driving $14.2M in value"},
+  {"slide": 2, "run": 1, "text": "Phase 1 GPU cluster deployed ahead of schedule, saving $2.1M annually"},
+  {"slide": 2, "run": 2, "text": "Hybrid cloud migration 62% complete — on track for Q4"}
+]
+```
+
+Write `edits.json` containing ONLY the runs you change, keeping the
+`slide`/`run` addresses (here: condensing run 1):
+
+```json
+[
+  {"slide": 2, "run": 1, "text": "Phase 1 GPUs live early — $2.1M/yr saved"}
+]
+```
+
+```bash
+python3 scripts/edit_deck.py replace work/ edits.json
+python3 scripts/edit_deck.py pack work/ deck-edited.pptx
+python3 scripts/qa_check.py deck-edited.pptx
+```
+
+**Run-granularity caveat:** one visual sentence can be split across several
+runs (e.g. a bold figure mid-sentence produces three runs: before / bold /
+after). `replace` works at run level, so rewrite each piece in place — or
+put the whole new sentence in the first run and set the leftover runs of
+that sentence to `""`. Never merge runs by hand-editing XML for this; you
+lose the formatting boundaries. For translate, keep numbers/units as their
+own runs when they already are — only the prose runs change.
+
+### split (one overloaded slide → two)
+
+1. `python3 scripts/edit_deck.py list work/` — find the slide's position N.
+2. `python3 scripts/edit_deck.py duplicate work/ N` — the clone lands at
+   position N+1 (notes link intentionally dropped).
+3. `inventory` → write two edit sets: in the original, blank (`""`) the runs
+   for the half that moves; in the clone (a NEW slideN.xml file number —
+   re-run `inventory` to see it), blank the half that stayed, and retitle
+   both (e.g. "… (1/2)" / "… (2/2)" or sharper per-half titles).
+4. `replace` → `pack` → visual QA. Blanked runs leave empty shapes behind;
+   if a whole box/group is now empty, delete that shape's `<p:sp>` in the
+   slide XML rather than leaving a ghost slot.
+
+### remix (re-layout a slide)
+
+- **Deck built from an outline (Mode A/B):** edit that slide's section in
+  the outline — change `**Layout:**` to the new layout — and rebuild. For a
+  surgical single-slide rebuild instead of a full one: build a one-slide
+  outline with the same palette, then merge and swap:
+
+  ```bash
+  python3 scripts/build_deck.py remix-slide.md --output one.pptx --palette <same>
+  python3 scripts/edit_deck.py append deck.pptx one.pptx --output tmp.pptx
+  python3 scripts/edit_deck.py unpack tmp.pptx work/
+  python3 scripts/edit_deck.py remove work/ N          # the old slide
+  python3 scripts/edit_deck.py reorder work/ ...       # move new slide into N's place
+  python3 scripts/edit_deck.py pack work/ deck-remixed.pptx
+  ```
+
+- **Template-mode decks:** `add_slide.py deck.pptx out.pptx --layout K`
+  adds a blank slide from the template's own layout K; fill placeholders
+  with python-pptx, then `remove`/`reorder` the old slide as above.
+- **Foreign decks (no outline, no usable template layouts):** there is no
+  automated remix — the slide's design exists only as its own XML. Rebuild
+  the slide content on the nearest skill layout (it will carry skill
+  styling, not the source deck's), or restructure within the existing
+  layout via `replace` + shape edits.
+
+## Splitting a deck: extract
+
+Pull a contiguous or cherry-picked subset into a new standalone deck —
+positions are the 1-based order `list` shows:
+
+```bash
+python3 scripts/edit_deck.py extract deck.pptx 3-7 --output sub.pptx
+python3 scripts/edit_deck.py extract deck.pptx 1,3-5,9 --output sub.pptx
+```
+
+The subset keeps deck order regardless of how the selection is written.
+Unreferenced leftovers (notes, charts, embedded workbooks, media of dropped
+slides) are garbage-collected so the output is clean. `--output` must
+differ from the input. Speaker notes of KEPT slides survive.
+
+## Merging decks: append
+
+Copy slides from one deck into another, after the destination's last slide,
+preserving the source slides' look:
+
+```bash
+python3 scripts/edit_deck.py append dst.pptx src.pptx --output merged.pptx
+python3 scripts/edit_deck.py append dst.pptx src.pptx --slides 2-4 --output merged.pptx
+```
+
+Each copied slide brings its full dependency graph — slide layout, slide
+master, theme, images, charts (including chart colors/style and the
+embedded .xlsx data) — renamed to avoid collisions and re-registered in
+content types and `presentation.xml`. Slides sharing a layout/master are
+deduplicated within one append run.
+
+**Known limitations:**
+
+- Source slides keep their own master/theme — faithful import, no
+  restyling. The merged deck shows each slide as it looked in its source
+  deck; expect a visible style seam unless both decks share a design. To
+  restyle instead, re-author the content on the destination deck's layouts.
+- Speaker notes on copied slides are dropped (same policy as `duplicate`).
+- If the decks have different slide sizes (16:9 vs 4:3), copied shapes keep
+  their source geometry on the destination's slide size — check visually.
+- Slide-to-slide hyperlinks pointing outside the copied selection are
+  dropped (a warning is printed).
+
+After any merge, run the standard QA gate (`qa_check.py`, render review) —
+and flip through the seam slides specifically.

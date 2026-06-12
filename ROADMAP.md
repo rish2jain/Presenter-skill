@@ -251,7 +251,7 @@ New `scripts/visual_regress.py`; `scripts/qa_check.py` (integrity hook);
   baseline. Exit 1 when any slide exceeds threshold. Document workflow: render → regress
   vs last delivered deck before sending revisions.
 
-## T13. Edit mode: verbs, remix, deck merge/split — `[ ]`
+## T13. Edit mode: verbs, remix, deck merge/split — `[x]`
 
 Files: `scripts/edit_deck.py`, `references/editing.md`, `tests/test_edit_deck.py`.
 
