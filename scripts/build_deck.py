@@ -120,7 +120,7 @@ def parse_outline(md_text):
             current = {"bullets": [], "stats": [], "cards": [], "items": [],
                        "data": [], "table_rows": [], "steps": [], "tiles": [],
                        "matrix_items": [], "bars": [], "milestones": [],
-                       "left_bullets": [], "right_bullets": []}
+                       "nodes": [], "left_bullets": [], "right_bullets": []}
             current["_line"] = lineno
             if "_appendix_from" in meta:
                 current["_appendix"] = True
@@ -227,6 +227,8 @@ def parse_outline(md_text):
             current["bars"].append(_parse_kv(item))
         elif item.startswith("Milestone:"):
             current["milestones"].append(_parse_kv(item))
+        elif item.startswith("Node:"):
+            current["nodes"].append(_parse_kv(item))
         elif item.startswith("Value=") or item.startswith("Stat"):
             kv = _parse_kv(item)
             if kv:
@@ -250,7 +252,7 @@ def _agenda_slide(sections, current=None):
     slide = {"bullets": list(sections), "stats": [], "cards": [], "items": [],
              "data": [], "table_rows": [], "steps": [], "tiles": [],
              "matrix_items": [], "bars": [], "milestones": [],
-             "left_bullets": [], "right_bullets": [],
+             "nodes": [], "left_bullets": [], "right_bullets": [],
              "layout": "agenda", "heading": "Agenda",
              "notes": "Auto-generated agenda tracker.", "_auto": True}
     if current:
@@ -334,7 +336,105 @@ ACTION_TITLE_LAYOUTS = {
     "matrix-2x2", "chart-callout", "dashboard", "funnel", "harvey-scorecard",
     "process-flow", "mekko", "gantt", "bar-mekko",
     "heatmap-table", "tornado", "football-field",
+    "driver-tree", "stakeholder-map", "raci",
 }
+
+
+def _validate_driver_tree(p, where, errors):
+    """Driver-tree: one root, parents exist, unique ids, depth<=3, <=12 nodes."""
+    nodes = p.get("nodes", [])
+    if not nodes:
+        errors.append(f"{where}: driver-tree needs '- Node: Id=\"..\" "
+                      'Label=".." Value=".." Parent=".."\' rows')
+        return
+    ids = [n.get("id", "").strip() for n in nodes]
+    if len(nodes) > 12:
+        errors.append(f"{where}: driver-tree supports at most 12 nodes "
+                      f"(got {len(nodes)})")
+    if not all(ids):
+        errors.append(f"{where}: every driver-tree Node needs an Id")
+        return
+    if len(set(ids)) != len(ids):
+        errors.append(f"{where}: driver-tree Node Ids must be unique")
+        return
+    roots = [n for n in nodes if not n.get("parent", "").strip()]
+    if len(roots) != 1:
+        errors.append(f"{where}: driver-tree needs exactly one root node "
+                      f"(empty Parent) — got {len(roots)}")
+    known = set(ids)
+    bad = sorted({n["parent"] for n in nodes
+                  if n.get("parent", "").strip() and n["parent"] not in known})
+    if bad:
+        errors.append(f"{where}: driver-tree Parent ids not found: "
+                      f"{', '.join(bad)}")
+    if len(roots) != 1 or bad:
+        return
+    children = {}
+    for n in nodes:
+        if n.get("parent", "").strip():
+            children.setdefault(n["parent"], []).append(n["id"])
+    depth, queue = {roots[0]["id"]: 1}, [roots[0]["id"]]
+    while queue:
+        nid = queue.pop(0)
+        for ch in children.get(nid, []):
+            depth[ch] = depth[nid] + 1
+            queue.append(ch)
+    if len(depth) != len(nodes):
+        missing = sorted(set(ids) - set(depth))
+        errors.append(f"{where}: driver-tree nodes not reachable from the "
+                      f"root (cycle?): {', '.join(missing)}")
+    elif max(depth.values()) > 3:
+        errors.append(f"{where}: driver-tree depth exceeds 3 levels "
+                      "(root + 2 — split the decomposition)")
+
+
+_TARGET_KEYS = {"targetx": "TargetX", "targety": "TargetY"}
+
+
+def _validate_stakeholder_map(p, where, errors, warnings):
+    """Stakeholder-map: 2+ valid 0-1 items; targets, when given, 0-1 pairs."""
+    valid = 0
+    for it in p.get("matrix_items", []):
+        try:
+            x, y = float(it.get("x", "")), float(it.get("y", ""))
+            if 0 <= x <= 1 and 0 <= y <= 1:
+                valid += 1
+        except ValueError:
+            pass
+        given = [k for k in _TARGET_KEYS if it.get(k)]
+        if len(given) == 1:
+            warnings.append(f"{where}: Item {it.get('name', '')!r} has only "
+                            "one of TargetX/TargetY — arrow will be skipped")
+        for k in given:
+            try:
+                if not 0 <= float(it[k]) <= 1:
+                    raise ValueError
+            except ValueError:
+                errors.append(f"{where}: Item {it.get('name', '')!r} "
+                              f"{_TARGET_KEYS[k]} must be a 0-1 float "
+                              f"(got {it[k]!r})")
+    if valid < 2:
+        errors.append(f"{where}: stakeholder-map needs 2+ '- Item: "
+                      'Name=".." X="0-1" Y="0-1"\' rows')
+
+
+def _validate_raci(p, where, errors, warnings):
+    """RACI: header + body table; cells R/A/C/I or blank; one 'A' per row."""
+    t_rows = p.get("table_rows", [])
+    if len(t_rows) < 2 or max((len(r) for r in t_rows), default=0) < 2:
+        errors.append(f"{where}: raci needs a markdown table "
+                      "(| Activity | Person… | header plus body rows)")
+        return
+    for row in t_rows[1:]:
+        cells = [c.strip().upper() for c in row[1:]]
+        for c in cells:
+            if c and c not in ("R", "A", "C", "I"):
+                errors.append(f"{where}: raci cell {c!r} in row {row[0]!r} "
+                              "must be a single R/A/C/I letter or blank")
+        n_a = cells.count("A")
+        if n_a != 1:
+            warnings.append(f"{where}: activity {row[0]!r} has {n_a} 'A' "
+                            "cells — exactly one Accountable per activity")
 
 
 def validate(slides, ctx, meta=None):
@@ -567,6 +667,12 @@ def validate(slides, ctx, meta=None):
                         warnings.append(
                             f"{where}: Marker value {parsed[1]:g} outside "
                             f"[{gmin:g}, {gmax:g}] — it will be skipped")
+        if layout == "driver-tree":
+            _validate_driver_tree(p, where, errors)
+        if layout == "stakeholder-map":
+            _validate_stakeholder_map(p, where, errors, warnings)
+        if layout == "raci":
+            _validate_raci(p, where, errors, warnings)
 
     # Narrative + data integrity
     warnings.extend(validate_narrative(meta, slides))

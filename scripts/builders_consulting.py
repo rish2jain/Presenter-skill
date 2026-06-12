@@ -985,3 +985,252 @@ def _football_marker(slide, p, pal, top, bottom, vx, gmin, gmax):
 
 
 LAYOUTS["football-field"] = build_football_field_slide
+
+
+# ── driver tree (value decomposition) ────────────────────────────────────────
+def _tree_leaf_order(nid, children, seen):
+    """DFS leaf ids under nid in outline order (cycle-safe)."""
+    if nid in seen:
+        return []
+    seen.add(nid)
+    kids = children.get(nid, [])
+    if not kids:
+        return [nid]
+    out = []
+    for k in kids:
+        out.extend(_tree_leaf_order(k, children, seen))
+    return out
+
+
+def build_driver_tree_slide(prs, p, pal, ctx):
+    """Left-to-right value decomposition: root box at left, children in
+    depth columns to the right, elbow connectors parent -> child. Boxes show
+    Label + Value + optional Delta (green-ish '+', red-ish '-')."""
+    nodes = [n for n in p.get("nodes", []) if n.get("id", "").strip()][:12]
+    if not nodes:
+        warn("driver-tree needs '- Node:' rows; rendering bullet-list")
+        return B.build_bullet_slide(prs, p, pal, ctx)
+    slide = B._blank_slide(prs, pal, pal["bg"])
+    B._heading(slide, p, pal)
+
+    by_id = {n["id"]: n for n in nodes}
+    children = {}
+    for n in nodes:
+        par = n.get("parent", "").strip()
+        if par and par in by_id:
+            children.setdefault(par, []).append(n["id"])
+    roots = [n["id"] for n in nodes if not n.get("parent", "").strip()]
+    root = roots[0] if roots else nodes[0]["id"]
+
+    depths, queue = {root: 1}, [root]  # BFS from root (validator caps at 3)
+    while queue:
+        nid = queue.pop(0)
+        for ch in children.get(nid, []):
+            if ch not in depths:
+                depths[ch] = depths[nid] + 1
+                queue.append(ch)
+    skipped = [i for i in by_id if i not in depths]
+    if skipped:
+        warn("driver-tree: nodes unreachable from root skipped: "
+             + ", ".join(skipped))
+    max_d = max(depths.values())
+
+    top, bottom = 1.95, 6.45
+    gap = 0.55  # connector corridor between columns
+    col_w = min(3.4, (11.93 - gap * (max_d - 1)) / max_d)
+    leaves = _tree_leaf_order(root, children, set())
+    row_h = (bottom - top) / max(len(leaves), 1)
+    box_h = max(0.38, min(0.95, row_h - 0.10))
+    ys = {nid: top + r * row_h + row_h / 2 for r, nid in enumerate(leaves)}
+
+    def center_y(nid):  # parents center on their children
+        if nid not in ys:
+            ys[nid] = sum(center_y(k) for k in children[nid]) / len(children[nid])
+        return ys[nid]
+    center_y(root)
+
+    for nid, d in depths.items():
+        _tree_box(slide, pal, by_id[nid],
+                  0.7 + (d - 1) * (col_w + gap), ys[nid] - box_h / 2,
+                  col_w, box_h)
+    _tree_connectors(slide, pal, children, depths, ys, col_w, gap)
+    return slide
+
+
+def _tree_box(slide, pal, node, x, y, col_w, box_h):
+    """Surface card with accent edge stripe: Label bold + Value + Delta."""
+    B.add_rect(slide, x, y, col_w, box_h, pal["surface"])
+    B.add_rect(slide, x, y, 0.06, box_h, pal["accent1"])
+    delta = node.get("delta", "").strip()
+    d_color = (pal["rag_good"] if delta.startswith("+")
+               else pal["rag_bad"] if delta.startswith("-")
+               else pal["text_muted"])
+    if box_h >= 0.62:  # two lines: label / value + delta
+        B.add_tb(slide, node.get("label", node["id"]), x + 0.18, y + 0.07,
+                 col_w - 0.30, 0.32, size=13, bold=True, color=pal["text"],
+                 font=pal["font_body"])
+        B.add_tb(slide, node.get("value", ""), x + 0.18, y + box_h - 0.36,
+                 col_w - 1.2, 0.3, size=12, color=pal["text_muted"],
+                 font=pal["font_body"])
+        if delta:
+            B.add_tb(slide, delta, x + col_w - 1.0, y + box_h - 0.36, 0.88,
+                     0.3, size=12, bold=True, color=d_color,
+                     align=PP_ALIGN.RIGHT, font=pal["font_body"])
+    else:  # compact: single centered row, value + delta right-aligned
+        ty = y + box_h / 2 - 0.15
+        B.add_tb(slide, node.get("label", node["id"]), x + 0.16, ty,
+                 col_w - 1.9, 0.3, size=11, bold=True, color=pal["text"],
+                 font=pal["font_body"])
+        B.add_tb(slide, node.get("value", ""), x + col_w - 1.78, ty, 0.95,
+                 0.3, size=11, color=pal["text_muted"], align=PP_ALIGN.RIGHT,
+                 font=pal["font_body"])
+        if delta:
+            B.add_tb(slide, delta, x + col_w - 0.82, ty, 0.7, 0.3, size=11,
+                     bold=True, color=d_color, align=PP_ALIGN.RIGHT,
+                     font=pal["font_body"])
+
+
+def _tree_connectors(slide, pal, children, depths, ys, col_w, gap):
+    """Elbow connectors parent right edge -> child left edge, text_muted."""
+    from pptx.enum.shapes import MSO_CONNECTOR
+    from palettes import hex_rgb
+    for par, kids in children.items():
+        if par not in depths:
+            continue
+        px = 0.7 + (depths[par] - 1) * (col_w + gap) + col_w
+        for kid in kids:
+            if kid not in depths:
+                continue
+            kx = 0.7 + (depths[kid] - 1) * (col_w + gap)
+            x1, y1, _, _ = B._sc(px, ys[par], 0, 0)
+            x2, y2, _, _ = B._sc(kx, ys[kid], 0, 0)
+            conn = slide.shapes.add_connector(
+                MSO_CONNECTOR.ELBOW, Inches(x1), Inches(y1),
+                Inches(x2), Inches(y2))
+            conn.line.color.rgb = hex_rgb(pal["text_muted"])
+            conn.line.width = Pt(1.25)
+
+
+LAYOUTS["driver-tree"] = build_driver_tree_slide
+
+
+# ── stakeholder map (support x influence) ────────────────────────────────────
+def build_stakeholder_map_slide(prs, p, pal, ctx):
+    """2x2 matrix engine with stakeholder axis defaults; items carrying
+    TargetX/TargetY get a thin arrow from current position to a hollow
+    (outlined) target circle — the engagement move to make."""
+    q = dict(p)
+    q.setdefault("x_axis", "Support →")
+    q.setdefault("y_axis", "Influence →")
+    slide = build_matrix_slide(prs, q, pal, ctx)
+
+    L, T, W, H = 2.0, 1.85, 9.6, 4.6  # build_matrix_slide plot area
+    from pptx.enum.shapes import MSO_CONNECTOR
+    from charts import add_arrowhead_to_connector
+    from palettes import hex_rgb
+
+    def place(fx, fy):  # fraction -> clamped plot coordinates
+        return (max(L + 0.09, min(L + W - 0.09, L + fx * W)),
+                max(T + 0.09, min(T + H - 0.09, T + (1 - fy) * H)))
+
+    for item in p.get("matrix_items", [])[:12]:
+        if not (item.get("targetx") or item.get("targety")):
+            continue
+        try:
+            fx, fy = float(item.get("x", "")), float(item.get("y", ""))
+            tx, ty = float(item["targetx"]), float(item["targety"])
+        except (KeyError, ValueError):
+            warn(f"stakeholder-map item {item.get('name', '')!r} needs "
+                 "numeric X/Y and both TargetX/TargetY — arrow skipped")
+            continue
+        x0, y0 = place(fx, fy)
+        x1, y1 = place(tx, ty)
+        # trim both arrow ends so it clears the dot and the hollow ring
+        ax0, ay0, ax1, ay1 = x0, y0, x1, y1
+        dist = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+        if dist > 0.3:
+            ux, uy = (x1 - x0) / dist, (y1 - y0) / dist
+            ax0, ay0 = x0 + ux * 0.13, y0 + uy * 0.13
+            ax1, ay1 = x1 - ux * 0.12, y1 - uy * 0.12
+        bx, by, _, _ = B._sc(ax0, ay0, 0, 0)
+        ex, ey, _, _ = B._sc(ax1, ay1, 0, 0)
+        conn = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT,
+                                          Inches(bx), Inches(by),
+                                          Inches(ex), Inches(ey))
+        conn.line.color.rgb = hex_rgb(pal["text_muted"])
+        conn.line.width = Pt(1.5)
+        add_arrowhead_to_connector(conn)
+        ring = B.add_circle(slide, x1 - 0.09, y1 - 0.09, 0.18, pal["bg"],
+                            line_hex=pal["accent1"], line_pt=1.5)
+        ring.fill.background()  # hollow: future position, not a second dot
+    return slide
+
+
+LAYOUTS["stakeholder-map"] = build_stakeholder_map_slide
+
+
+# ── raci ─────────────────────────────────────────────────────────────────────
+RACI_CHIP_KEYS = {"R": "accent1", "A": "accent2", "C": "accent3",
+                  "I": "text_muted"}
+
+
+def build_raci_slide(prs, p, pal, ctx):
+    """RACI chart: activity rows x person columns, colored letter chips
+    (R=accent1, A=accent2, C=accent3, I=text_muted; blank = no chip)."""
+    rows = p.get("table_rows", [])
+    if len(rows) < 2:
+        warn("raci needs a markdown table; rendering as table")
+        return B.build_table_slide(prs, p, pal, ctx)
+    slide = B._blank_slide(prs, pal, pal["bg"])
+    B._heading(slide, p, pal)
+    if len(rows) - 1 > 12:
+        warn(f"raci with {len(rows) - 1} activities — consider splitting")
+
+    n_cols = max(len(r) for r in rows)
+    first_col_w = 3.6
+    col_w = (11.9 - first_col_w) / max(n_cols - 1, 1)
+    row_h = max(0.3, min(0.62, 4.4 / len(rows) - 0.06))
+    top = 1.9
+    for r, row in enumerate(rows):
+        y = top + r * (row_h + 0.06)
+        if r > 0:
+            B.add_rect(slide, 0.7, y, 11.9, row_h,
+                       pal["surface"] if r % 2 else pal["bg_deep"])
+        for c in range(n_cols):
+            cell = (row[c] if c < len(row) else "").strip()
+            x = 0.7 + (first_col_w + (c - 1) * col_w if c else 0)
+            w = col_w if c else first_col_w
+            if r == 0:  # header: activity column + person names
+                B.add_tb(slide, cell, x + (0.15 if c == 0 else 0),
+                         y + row_h / 2 - 0.16, w, 0.35, size=14, bold=True,
+                         color=pal["accent1"],
+                         align=PP_ALIGN.CENTER if c else PP_ALIGN.LEFT,
+                         font=pal["font_body"])
+            elif c == 0:
+                B.add_tb(slide, cell, x + 0.15, y + row_h / 2 - 0.16,
+                         w - 0.2, 0.35, size=13, color=pal["text"],
+                         font=pal["font_body"])
+            elif cell:
+                key = RACI_CHIP_KEYS.get(cell.upper())
+                if not key:  # validator errors on these; render muted text
+                    B.add_tb(slide, cell, x, y + row_h / 2 - 0.16, w, 0.35,
+                             size=12, color=pal["text_muted"],
+                             align=PP_ALIGN.CENTER, font=pal["font_body"])
+                    continue
+                d = max(0.2, min(0.42, row_h - 0.14))
+                fill = pal[key]
+                B.add_circle(slide, x + w / 2 - d / 2, y + row_h / 2 - d / 2,
+                             d, fill)
+                B.add_tb(slide, cell.upper(), x + w / 2 - d / 2,
+                         y + row_h / 2 - 0.15, d, 0.3, size=12, bold=True,
+                         color=_label_color_on(fill, pal),
+                         align=PP_ALIGN.CENTER, font=pal["font_body"])
+    legend_y = min(6.45, top + len(rows) * (row_h + 0.06) + 0.08)
+    B.add_tb(slide,
+             "R = Responsible · A = Accountable · C = Consulted · I = Informed",
+             0.7, legend_y, 11.9, 0.3, size=11, color=pal["text_muted"],
+             font=pal["font_label"])
+    return slide
+
+
+LAYOUTS["raci"] = build_raci_slide

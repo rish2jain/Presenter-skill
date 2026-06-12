@@ -98,7 +98,7 @@ Files: `scripts/builders_consulting.py` (register in LAYOUTS), `scripts/build_de
 All three: ghost-mode placeholder support comes free via build_ghost_slide; add each to
 ACTION_TITLE_LAYOUTS.
 
-## T5. New diagram layouts: driver-tree, stakeholder-map, raci — `[ ]`
+## T5. New diagram layouts: driver-tree, stakeholder-map, raci — `[x]`
 
 Files: same as T4.
 

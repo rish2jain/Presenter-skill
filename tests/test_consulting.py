@@ -570,3 +570,236 @@ def test_heatmap_15_rows_builds_and_warns(capsys):
     err = capsys.readouterr().err
     assert "15" in err and "heatmap-table" in err, (
         f"expected density warning in stderr; got: {err!r}")
+
+
+# ── driver-tree ──────────────────────────────────────────────────────────────
+DRIVER_MD = """## Slide 1: Pricing drives 60% of the planned revenue uplift
+**Layout:** driver-tree
+- Node: Id="rev" Label="Revenue" Value="$120M" Delta="+8%" Parent=""
+- Node: Id="price" Label="Price" Value="$70M" Delta="+12%" Parent="rev"
+- Node: Id="vol" Label="Volume" Value="$50M" Delta="-2%" Parent="rev"
+- Node: Id="mix" Label="Mix" Value="$30M" Parent="price"
+"""
+
+
+def test_driver_tree_parses_nodes():
+    _, slides = parse_outline(DRIVER_MD)
+    nodes = slides[0]["nodes"]
+    assert len(nodes) == 4
+    assert nodes[0] == {"id": "rev", "label": "Revenue", "value": "$120M",
+                        "delta": "+8%", "parent": ""}
+
+
+def _label_left(slide, label):
+    lefts = [s.left for s in slide.shapes
+             if getattr(s, "has_text_frame", False)
+             and s.text_frame.text == label]
+    assert lefts, f"label {label!r} not found"
+    return min(lefts)
+
+
+def test_driver_tree_columns_advance_with_depth():
+    from builders_consulting import build_driver_tree_slide
+    _, slides = parse_outline(DRIVER_MD)
+    slide = build_driver_tree_slide(_prs(), slides[0], PAL, CTX)
+    assert _label_left(slide, "Revenue") < _label_left(slide, "Price") \
+        < _label_left(slide, "Mix")
+    assert _label_left(slide, "Price") == _label_left(slide, "Volume")
+    # 3 parent->child edges = 3 elbow connectors
+    conns = slide.shapes._spTree.findall(qn("p:cxnSp"))
+    assert len(conns) == 3
+
+
+def _run_colors_of(slide, text):
+    out = []
+    for s in slide.shapes:
+        if getattr(s, "has_text_frame", False) and s.text_frame.text == text:
+            for para in s.text_frame.paragraphs:
+                out.extend(str(r.font.color.rgb) for r in para.runs)
+    return out
+
+
+def test_driver_tree_delta_colors_by_sign():
+    from builders_consulting import build_driver_tree_slide
+    _, slides = parse_outline(DRIVER_MD)
+    slide = build_driver_tree_slide(_prs(), slides[0], PAL, CTX)
+    assert PAL["rag_good"] in _run_colors_of(slide, "+12%")
+    assert PAL["rag_bad"] in _run_colors_of(slide, "-2%")
+
+
+def test_driver_tree_12_nodes_stays_in_canvas():
+    rows = ['- Node: Id="r" Label="Root" Value="100" Parent=""']
+    rows += [f'- Node: Id="n{i}" Label="Driver {i}" Value="{i}" Parent="r"'
+             for i in range(11)]
+    md = ("## Slide 1: Eleven drivers decompose the full cost base\n"
+          "**Layout:** driver-tree\n" + "\n".join(rows) + "\n")
+    from builders_consulting import build_driver_tree_slide
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert not errors, errors
+    slide = build_driver_tree_slide(_prs(), slides[0], PAL, CTX)
+    EMU_IN = 914400
+    for s in slide.shapes:
+        assert s.left >= 0
+        assert (s.left + s.width) / EMU_IN <= 13.33 + 0.01
+        assert (s.top + s.height) / EMU_IN <= 7.5 + 0.01
+
+
+def test_driver_tree_validator_rules():
+    # two roots
+    md = DRIVER_MD.replace('Parent="rev"', 'Parent=""', 1)
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("exactly one root" in e for e in errors), errors
+    # unknown parent
+    md = DRIVER_MD.replace('Parent="price"', 'Parent="ghost"')
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("ghost" in e for e in errors), errors
+    # duplicate ids
+    md = DRIVER_MD.replace('Id="mix"', 'Id="vol"')
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("unique" in e for e in errors), errors
+    # depth > 3
+    md = DRIVER_MD + '- Node: Id="deep" Label="Too deep" Parent="mix"\n'
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("depth" in e for e in errors), errors
+    # > 12 nodes
+    extra = "\n".join(f'- Node: Id="x{i}" Label="X{i}" Parent="rev"'
+                      for i in range(9))
+    meta, slides = parse_outline(DRIVER_MD + extra + "\n")
+    errors, _ = validate(slides, CTX, meta)
+    assert any("12" in e for e in errors), errors
+
+
+# ── stakeholder-map ──────────────────────────────────────────────────────────
+STAKE_MD = """## Slide 1: Move the CFO from skeptic to sponsor this quarter
+**Layout:** stakeholder-map
+- Item: Name="CFO" X="0.2" Y="0.9" TargetX="0.8" TargetY="0.9"
+- Item: Name="COO" X="0.7" Y="0.6"
+- Item: Name="CISO" X="0.4" Y="0.3"
+"""
+
+
+def test_stakeholder_map_default_axes_and_arrow():
+    from builders_consulting import build_stakeholder_map_slide
+    from pptx.enum.dml import MSO_FILL
+    _, slides = parse_outline(STAKE_MD)
+    slide = build_stakeholder_map_slide(_prs(), slides[0], PAL, CTX)
+    texts = _texts(slide)
+    assert any("Support" in t for t in texts)
+    assert any("Influence" in t for t in texts)
+    conns = slide.shapes._spTree.findall(qn("p:cxnSp"))
+    assert len(conns) == 1  # one item has targets
+    # arrowhead appended (version-guarded helper; present on this python-pptx)
+    assert conns[0].findall(".//" + qn("a:tailEnd"))
+    # hollow target circle: oval with background (no) fill
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    hollow = [s for s in slide.shapes
+              if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+              and s.width == s.height
+              and s.fill.type == MSO_FILL.BACKGROUND]
+    assert len(hollow) == 1
+
+
+def test_stakeholder_map_axis_override():
+    from builders_consulting import build_stakeholder_map_slide
+    md = STAKE_MD + '- X-axis: "Alignment →"\n'
+    _, slides = parse_outline(md)
+    slide = build_stakeholder_map_slide(_prs(), slides[0], PAL, CTX)
+    texts = _texts(slide)
+    assert any("Alignment" in t for t in texts)
+    assert not any("Support" in t for t in texts)
+
+
+def test_stakeholder_map_validator():
+    md = """## Slide 1: One stakeholder is not a map of the landscape
+**Layout:** stakeholder-map
+- Item: Name="CFO" X="0.2" Y="0.9"
+"""
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("stakeholder-map" in e for e in errors), errors
+    md2 = STAKE_MD.replace('TargetX="0.8"', 'TargetX="1.4"')
+    meta, slides = parse_outline(md2)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("TargetX" in e for e in errors), errors
+
+
+def test_stakeholder_map_single_target_key_warns():
+    md = STAKE_MD.replace(' TargetY="0.9"', "")
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert any("TargetX/TargetY" in w for w in warnings), warnings
+
+
+# ── raci ─────────────────────────────────────────────────────────────────────
+RACI_MD = """## Slide 1: Every workstream has a single accountable owner
+**Layout:** raci
+| Activity | Alice | Bob | Cara |
+|---|---|---|---|
+| Design | A | R | C |
+| Build | I | A | R |
+"""
+
+
+def test_raci_chips_colored_by_letter():
+    from builders_consulting import build_raci_slide
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    _, slides = parse_outline(RACI_MD)
+    slide = build_raci_slide(_prs(), slides[0], PAL, CTX)
+    ovals = [s for s in slide.shapes
+             if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+             and s.width == s.height]
+    fills = [_fill_of(o) for o in ovals]
+    assert fills.count(PAL["accent1"]) == 2     # R chips
+    assert fills.count(PAL["accent2"]) == 2     # A chips
+    assert fills.count(PAL["accent3"]) == 1     # C chip
+    assert fills.count(PAL["text_muted"]) == 1  # I chip
+    texts = _texts(slide)
+    for expected in ("Activity", "Alice", "Design", "Responsible"):
+        assert any(expected in t for t in texts), (expected, texts)
+
+
+def test_raci_blank_cell_renders_no_chip():
+    from builders_consulting import build_raci_slide
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    md = RACI_MD.replace("| Design | A | R | C |", "| Design | A | R |  |")
+    _, slides = parse_outline(md)
+    slide = build_raci_slide(_prs(), slides[0], PAL, CTX)
+    ovals = [s for s in slide.shapes
+             if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+             and s.width == s.height]
+    assert len(ovals) == 5  # 6 cells minus the blank one
+
+
+def test_raci_validator_letters_and_accountable():
+    md = RACI_MD.replace("| Design | A | R | C |", "| Design | A | X | C |")
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("R/A/C/I" in e for e in errors), errors
+    # 'A,R' combined cells are invalid too
+    md = RACI_MD.replace("| Design | A | R | C |", "| Design | A,R |  | C |")
+    meta, slides = parse_outline(md)
+    errors, _ = validate(slides, CTX, meta)
+    assert any("R/A/C/I" in e for e in errors), errors
+    # zero or 2+ Accountable cells warn (not error)
+    md = RACI_MD.replace("| Build | I | A | R |", "| Build | I | R | R |")
+    meta, slides = parse_outline(md)
+    errors, warnings = validate(slides, CTX, meta)
+    assert not errors, errors
+    assert any("Accountable" in w for w in warnings), warnings
+    md = RACI_MD.replace("| Build | I | A | R |", "| Build | A | A | R |")
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert any("Accountable" in w for w in warnings), warnings
+
+
+def test_t5_layouts_registered_and_action_titled():
+    from build_deck import ACTION_TITLE_LAYOUTS
+    for name in ("driver-tree", "stakeholder-map", "raci"):
+        assert name in builders.LAYOUT_MAP
+        assert name in ACTION_TITLE_LAYOUTS
+        assert name not in builders.GHOST_KEEP_REAL

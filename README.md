@@ -8,7 +8,7 @@ Built for tech-strategy work: action titles, SCQA executive summaries, value-bri
 
 ## Features
 
-**29 layouts.** Core set (title, agenda, section dividers, bullets, two-column + chart/image, cards, stat callouts, timeline, comparison, table, full-bleed image, quote) plus a consulting set:
+**32 layouts.** Core set (title, agenda, section dividers, bullets, two-column + chart/image, cards, stat callouts, timeline, comparison, table, full-bleed image, quote) plus a consulting set:
 
 | Layout | Use |
 |---|---|
@@ -21,6 +21,9 @@ Built for tech-strategy work: action titles, SCQA executive summaries, value-bri
 | `exec-summary-scqa` | Situation \| Findings \| Recommendation |
 | `chart-callout` | Chart + KEY INSIGHT box, optional dashed benchmark line |
 | `dashboard` | KPI tiles with ▲▼ trend deltas |
+| `driver-tree` | Left-to-right value decomposition with elbow connectors |
+| `stakeholder-map` | Support × influence grid with move arrows to target positions |
+| `raci` | Activities × people with colored R/A/C/I letter chips |
 | `funnel`, `big-number`, `process-flow`, `next-steps`, `quote-evidence` | …and more |
 
 ![Waterfall example](docs/sample-waterfall.png)

@@ -154,6 +154,9 @@ Generic bullets (`- text`) work on `bullet-list`, `two-column-split`, `exec-summ
 | `heatmap-table` | Benchmarks, scorecards by intensity | Markdown table, numeric cells heat-filled; optional `- Scale: rag` |
 | `tornado` | Sensitivity analysis | **Series:** Low, High + `- Driver: low, high` rows; optional `- Sort: off` |
 | `football-field` | Valuation ranges | **Series:** Low, High + `- Method: low, high` rows; optional `- Marker:` |
+| `driver-tree` | Value/KPI decomposition | `- Node: Id Label Value Delta Parent` rows; one root, depth ≤ 3, ≤ 12 nodes |
+| `stakeholder-map` | Stakeholder engagement plans | matrix-2x2 Item rows + optional `TargetX`/`TargetY` move arrows |
+| `raci` | Roles & responsibilities | Markdown table: activities × people, cells R/A/C/I or blank |
 
 ### Consulting layout syntax
 
@@ -264,6 +267,43 @@ Generic bullets (`- text`) work on `bullet-list`, `two-column-split`, `exec-summ
                               fall inside the data range or it is skipped
 - Notes: "Floating bars low→high on a shared nice-interval axis."
 ```
+
+```markdown
+## Slide 15: Pricing drives 60% of the planned revenue uplift
+**Layout:** driver-tree
+- Node: Id="rev" Label="Revenue" Value="$120M" Delta="+8%" Parent=""
+- Node: Id="price" Label="Price" Value="$70M" Delta="+12%" Parent="rev"
+- Node: Id="vol" Label="Volume" Value="$50M" Delta="-2%" Parent="rev"
+- Node: Id="mix" Label="Product mix" Value="$30M" Delta="+5%" Parent="price"
+- Notes: "Root at left, children decompose to the right; Delta colors by sign."
+
+## Slide 16: Move the CFO from skeptic to sponsor before gate review
+**Layout:** stakeholder-map
+- Item: Name="CFO" X="0.2" Y="0.9" TargetX="0.8" TargetY="0.9"
+- Item: Name="COO" X="0.7" Y="0.6"
+- Item: Name="CISO" X="0.4" Y="0.3" TargetX="0.55" TargetY="0.35"
+- Notes: "X = support, Y = influence (0-1). Targets draw a move arrow."
+
+## Slide 17: Every workstream has one accountable owner from day one
+**Layout:** raci
+| Activity | Alice | Bob | Cara |
+|---|---|---|---|
+| Design | A | R | C |
+| Build | I | A | R |
+| Test | C |  | A |
+- Notes: "Cells: single R/A/C/I letter or blank — exactly one A per row."
+```
+
+`driver-tree` rows are `- Node:` key-value lines: exactly one root (empty
+`Parent=""`), every other `Parent` must name an existing `Id`, Ids unique,
+depth ≤ 3 (root + 2), ≤ 12 nodes (`--check` errors otherwise). `Delta`
+starting with `+` renders green-ish (`rag_good`), `-` red-ish (`rag_bad`).
+`stakeholder-map` reuses the matrix-2x2 engine — same `- Item:` rows, axes
+default to "Support →" (x) and "Influence →" (y), overridable with
+`- X-axis:` / `- Y-axis:`; `TargetX`/`TargetY` (both required, 0-1) draw a
+thin arrow to a hollow circle at the target position. `raci` errors on any
+non-blank cell that isn't a single R/A/C/I letter ("A,R" is invalid) and
+warns when an activity row has zero or 2+ `A` cells.
 
 `heatmap-table` needs a header row plus body rows with 2+ columns and at
 least one numeric body column (`--check` errors otherwise); non-numeric
@@ -386,6 +426,12 @@ any .pptx, including imported ones.
 - `football-field` — valuation range bars on a shared axis; needs
   `**Series:**` with 2 names + `- Method: low, high` rows (low < high);
   `- Marker: label, value` adds a dashed reference line.
+- `driver-tree` — left-to-right value decomposition from `- Node:` rows
+  (one root, depth ≤ 3, ≤ 12 nodes); Delta colors green/red by sign.
+- `stakeholder-map` — support × influence grid (matrix-2x2 engine);
+  `TargetX`/`TargetY` on an item draws a move arrow to a hollow circle.
+- `raci` — activities × people markdown table; R/A/C/I letter chips
+  (R=accent1, A=accent2, C=accent3, I=muted); one Accountable per row.
 
 **Custom palettes:** drop `<name>.json` into `<assets>/palettes/`:
 
