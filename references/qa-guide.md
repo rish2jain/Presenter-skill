@@ -87,10 +87,12 @@ Deterministic per-slide layout metrics — no LibreOffice, no images, pure geome
 
 Per slide it reports:
 - **Overlaps:** pairs of shapes that intersect by more than 0.02 sq in, excluding containment (a shape fully inside another is the intentional card/background pattern).
-- **Uneven spacing:** rows/columns of similar-sized shapes whose gap sequence is inconsistent ("uneven row spacing: gaps 0.31/0.29/0.55in").
+- **Uneven spacing:** rows/columns of similar-sized shapes whose gap sequence is inconsistent ("uneven row spacing: gaps 0.31/0.29/0.55in"). Runs are split at gaps over 1.5in — a large jump means separate visual groups, each judged on its own.
 - **Near-misses:** shape edges that are *almost* aligned — off by 0.04–0.08in. Smaller offsets are invisible at render size; larger ones are presumed intentional.
 - **Whitespace ratio** (1 − covered/slide area, rasterized so overlaps aren't double-counted) plus **visual-mass imbalance** between left/right and top/bottom halves.
 - **Word count** — more than 90 words is flagged as text overload.
+
+The report deliberately stays quiet about patterns dense consulting layouts produce on purpose, so the findings it *does* print deserve attention. Overlap classification is z-order aware: value labels drawn over bars, kicker bands layered over cards, and solid-on-solid stacking are suppressed, while text-on-text collisions and text trapped under a solid shape are reported — judged on the estimated glyph area (text insets + font sizes), not the oversized text box, so breathing room inside a frame doesn't read as a collision. Near-misses skip pairs co-aligned on the opposite edge of the same axis (tornado/waterfall/football-field bars off a shared spine — the differing edge is data, not drift) and pairs involving text frames (their visible edge is the inset glyph edge, not the box edge); at most 4 near-miss lines print per slide, closest first, with the rest summarized in one line.
 
 Human output lists only slides with findings and ends with a summary line; `--json` emits full metrics for every slide (useful even when nothing is flagged — e.g. to compare whitespace ratios across sibling slides). Decks built by this skill's builders should report zero findings; anything it prints is worth fixing in the outline before rendering and inspecting.
 
