@@ -73,6 +73,8 @@ This creates `slide-01.png`, `slide-02.png`, … plus a stitched `grid.png`.
 
 If LibreOffice is not available the script falls back to a Pillow renderer — **the fallback dumps text only and cannot be used to judge layout, images, or charts**. Do not treat visual QA as complete without LibreOffice — rely on `qa_check.py` and opening the `.pptx` directly until LibreOffice is installed.
 
+**Optional higher-fidelity renderers.** LibreOffice remains the default, but two alternates render closer to real PowerPoint when available: ONLYOFFICE's `x2t` converter (ships with ONLYOFFICE Document Server / Desktop Editors; converts .pptx → PDF with a rendering engine built for OOXML fidelity), and Microsoft Graph PDF export (`GET /drive/items/{id}/content?format=pdf` — uploads the deck to OneDrive/SharePoint and uses Microsoft's own rendering service; requires an M365 tenant and auth). Reach for either when LibreOffice output looks suspect — font metrics, chart label placement, effects — then `pdftoppm` the PDF into thumbnails as usual.
+
 ---
 
 ## Step 1.5 — Geometry Self-Check (instant — actually run it *before* Step 1's render)
@@ -96,39 +98,28 @@ Human output lists only slides with findings and ends with a summary line; `--js
 
 ## Step 2 — Visual Inspection (use a fresh-eyes subagent)
 
-**Dispatch a subagent to inspect the thumbnails — even for a 3-slide deck.** The agent that generated the slides systematically under-reports its own defects; a fresh context judging only the rendered images catches what the generator rationalizes away. Give the subagent the thumbnail paths and the checklist below, and ask it to return a numbered defect list per slide.
+**Dispatch a subagent to inspect the thumbnails — even for a 3-slide deck.** The agent that generated the slides systematically under-reports its own defects; a fresh context judging only the rendered images catches what the generator rationalizes away. Give the subagent the thumbnail paths and the flaw checklist below.
 
-Flag any of the following:
+**Use the checklist verbatim — do not ask for a holistic impression.** Binary per-flaw questions catch significantly more real defects than open-ended "review this slide" prompts (SlideAudit, UIST'25). For **each numbered grid cell**, the subagent answers yes/no per flaw, with one line of evidence for every yes:
 
-**Layout Issues**
-- [ ] Text overflowing outside slide boundaries
-- [ ] Text boxes overlapping each other
-- [ ] Images cropped unexpectedly or stretched
-- [ ] Elements too close to slide edges (< 0.4" margin)
-- [ ] Cards/columns misaligned or uneven widths
+1. **Overlap / collision** — do any two elements intersect (text on text, label on bar, icon on card edge)?
+2. **Misalignment** — do element edges sit off the implied grid shared by their siblings (cards, columns, bullets)?
+3. **Crowding / whitespace imbalance** — is one half dense while the other is empty, or content pinched against edges (< 0.4" margin)?
+4. **Weak title hierarchy** — is the title *not* the most visually dominant text on the slide?
+5. **Off-palette color** — does any element use a color that doesn't belong to the deck palette?
+6. **Text overload** — paragraph walls, more than 5 bullets, or body text rendered too small to read?
+7. **Image quality** — stretched, pixelated, washed-out, oddly cropped, or missing imagery (incl. dark-on-dark logos)?
+8. **Sibling inconsistency** — do fonts, margins, or title positions differ from neighboring slides?
 
-**Typography Issues**
-- [ ] Title text too small (should be ≥ 32pt)
-- [ ] Body text too small (should be ≥ 14pt)
-- [ ] Low contrast: light text on light background, dark text on dark background
-- [ ] Placeholder text not replaced ("Click to add title", "XXXX", "Lorem ipsum")
-- [ ] Inconsistent font usage across slides
+`geometry_report.py` (Step 1.5) already detects flaws 1–3 deterministically — the subagent's value is flaws 4–8, plus any geometry the report missed (it cannot see rendered text wrap, fonts, or image content).
 
-**Image Issues**
-- [ ] User images not appearing (missing file path)
-- [ ] Images covering text unintentionally
-- [ ] Logo appears dark-on-dark or washed out
-- [ ] Image aspect ratio distorted (stretched/squashed)
+**Deck-level rubric.** After the per-cell pass, the subagent scores the whole deck 1–5 on three dimensions (PPTEval):
 
-**Chart Issues**
-- [ ] Chart axes labels unreadable
-- [ ] Chart data doesn't match the outline
-- [ ] Chart background is white on a dark slide (fix: set plot area fill to transparent)
+- **Content** — text quality, every title's claim supported by its slide, images relevant.
+- **Design** — color harmony, visual hierarchy, layout craft.
+- **Coherence** — the storyline flows logically slide to slide.
 
-**Content Issues**
-- [ ] More than 5 bullet points on a single slide (split into two)
-- [ ] Slide looks empty or has too little content
-- [ ] No visual element on a content slide (add icon, chart, or image)
+Record all three scores in your QA summary. **Any dimension below 4 routes back to the fix loop (Step 3)** — use the per-cell yes answers to locate the offending slides and fix them in the outline.
 
 ---
 

@@ -18,7 +18,7 @@ Each task below is a self-contained implementation spec. Status: `[ ]` open, `[x
 
 ---
 
-## T2. Chart intelligence pack — `[ ]`
+## T2. Chart intelligence pack — `[x]`
 
 think-cell-parity label/scale behaviors. Files: `scripts/charts.py`, `scripts/build_deck.py`
 (syntax), `scripts/builders_consulting.py` (waterfall/funnel/mekko labels),
@@ -270,7 +270,7 @@ Files: `scripts/edit_deck.py`, `references/editing.md`, `tests/test_edit_deck.py
   sldIdLst. Validate XML before repack (existing validator). Known-limitation note:
   source slides keep their own master/theme (faithful import, no restyling).
 
-## T14. Docs: VLM rubric QA, SKILL.md/README refresh — `[ ]`
+## T14. Docs: VLM rubric QA, SKILL.md/README refresh — `[x]`
 
 Files: `references/qa-guide.md`, `SKILL.md`, `README.md`, `references/decision-tree.md`.
 
@@ -301,3 +301,7 @@ Files: `references/qa-guide.md`, `SKILL.md`, `README.md`, `references/decision-t
   full integration deferred.
 - **Axis breaks ("breaking bars")** — recognizable but fiddly; revisit with shape-chart
   unification.
+- **builders_consulting.py split (1237 lines)** — exceeds the file-size budget after
+  T4/T5; extract chart-shape layouts into a sibling module.
+- **edit_deck.py split (870 lines) — merge engine extraction** — the `append` part
+  graph/rId-remap machinery deserves its own module before further edit verbs land.

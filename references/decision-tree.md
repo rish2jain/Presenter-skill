@@ -31,8 +31,14 @@ User request involves .pptx?
 | Content proofread | `diff_deck.py outline.md deck.pptx` |
 | Geometric QA | `qa_check.py deck.pptx` |
 | Accessibility AA | `qa_check.py deck.pptx --accessibility` |
+| OOXML schema check | `qa_check.py deck.pptx --integrity` |
+| Layout metrics (pre-render) | `geometry_report.py deck.pptx` |
 | Visual QA | `render_slides.py deck.pptx --grid` |
+| Revision regression | `visual_regress.py qa-baseline/ qa-current/` |
+| Brand palette from URL | `brand_kit.py <domain> --name <n>` |
+| Pre-read handout | `gen_handout.py outline.md` |
 | Appendix skeleton | `gen_appendix.py outline.md` |
 | Add slide to existing | `add_slide.py in.pptx out.pptx --layout N` |
+| Split / merge decks | `edit_deck.py extract` / `edit_deck.py append` |
 | Reorder unpacked slides | `edit_deck.py reorder unpacked/ 3,1,2,4` |
 | Clean orphan media | `edit_deck.py clean unpacked/` |

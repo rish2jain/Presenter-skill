@@ -22,6 +22,9 @@ Generate professional, visually rich native PowerPoint (.pptx) presentations. Se
 | Embed user-supplied images | Read `references/image-handling.md` |
 | Generate charts natively | Read `references/charts-guide.md` |
 | QA and render check | Read `references/qa-guide.md` |
+| Match a company's brand | `scripts/brand_kit.py <domain> --name <n>` → `--palette <n>` |
+| Pre-read handout | `scripts/gen_handout.py outline.md` |
+| Split / merge decks | `edit_deck.py extract` / `append` — see `references/editing.md` |
 
 ---
 
@@ -39,7 +42,7 @@ User provides an existing .pptx file to use as the visual template. Read `refere
 User has shared one or more images (photos, diagrams, screenshots, brand assets) to embed in specific slides. Read `references/image-handling.md`. This mode can be combined with A or B.
 
 **Mode D: Edit Existing Deck**
-User provides a finished .pptx and wants changes (fix text, swap images, add/remove/reorder slides). Do NOT rebuild — edit surgically. Read `references/editing.md`. Skip Phases 1–3 and go straight to the editing workflow + Phase 4 QA.
+User provides a finished .pptx and wants changes (fix text, swap images, add/remove/reorder slides, or split/merge decks via `edit_deck.py extract`/`append`). Do NOT rebuild — edit surgically. Read `references/editing.md`. Skip Phases 1–3 and go straight to the editing workflow + Phase 4 QA.
 
 ---
 
@@ -74,22 +77,24 @@ After gathering answers, research the topic if needed using available tools.
 2. Run `python3 scripts/build_deck.py outline.md --output deck.pptx [--palette X] [--template T.pptx] [--assets-dir DIR] [--density compact|comfortable] [--variant a|b|c] [--ghost]`
    - `--ghost` builds a skeleton deck (real action titles, grey labeled exhibit placeholders) for storyline sign-off before investing in content.
    - Custom brand palettes: drop `<name>.json` into `<assets>/palettes/` and use `--palette <name>` (schema: `references/generation-guide.md`).
+   - Brand-match decks: `python3 scripts/brand_kit.py <domain> --name <n>` generates a custom palette (+ logo) from a company's web presence, then build with `--palette <n>`.
 3. The build fails fast on validation errors. If any slide fails during build, **no .pptx is written**.
 
-Optional: `python3 scripts/gen_appendix.py outline.md` for pitch/strategy appendix skeleton.
+Optional: `python3 scripts/gen_appendix.py outline.md` for pitch/strategy appendix skeleton; `python3 scripts/gen_handout.py outline.md` for a pre-read markdown handout.
 
 ---
 
 ## Phase 4 — QA (Required)
 
-Never skip QA. Six complementary checks (see `references/qa-guide.md`):
+Never skip QA. Seven complementary checks (see `references/qa-guide.md`):
 
-1. **Programmatic:** `python3 scripts/qa_check.py deck.pptx` (add `--accessibility` for WCAG AA strict mode)
+1. **Programmatic:** `python3 scripts/qa_check.py deck.pptx` (add `--accessibility` for WCAG AA strict mode, `--integrity` for OOXML schema validation)
 2. **Deck lint:** `python3 scripts/pptx_lint.py deck.pptx --palette <palette>` — cross-slide consistency (jiggle, page sequence, off-palette colors, missing fonts)
 3. **Content diff:** `python3 scripts/diff_deck.py outline.md deck.pptx` — catches missing text vs outline
-4. **Visual:** `python3 scripts/render_slides.py deck.pptx --grid --out assets/qa-thumbs/` + fresh-eyes subagent (grid cells are numbered)
-5. **Consistency (LLM):** `python3 scripts/qa_check.py deck.pptx --numbers` + titles test — cross-check totals, repeated KPIs, title claims (see `references/qa-guide.md`)
-6. **Fix loop:** edit outline → rebuild → re-run all checks until clean
+4. **Geometry (pre-render):** `python3 scripts/geometry_report.py deck.pptx` — deterministic overlap/spacing/whitespace metrics; fix findings before spending a render
+5. **Visual:** `python3 scripts/render_slides.py deck.pptx --grid --out assets/qa-thumbs/` + fresh-eyes subagent using the per-flaw checklist and 1–5 rubric in `references/qa-guide.md` (grid cells are numbered)
+6. **Consistency (LLM):** `python3 scripts/qa_check.py deck.pptx --numbers` + titles test — cross-check totals, repeated KPIs, title claims (see `references/qa-guide.md`)
+7. **Fix loop:** edit outline → rebuild → re-run all checks until clean; on revision cycles, diff against the last delivered render with `python3 scripts/visual_regress.py assets/qa-baseline/ assets/qa-current/`
 
 Deliver the `.pptx` and the thumbnail grid together.
 
