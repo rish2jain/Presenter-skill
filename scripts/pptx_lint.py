@@ -135,6 +135,34 @@ def check_page_sequence(prs, issues):
                 f"({v1} on slide {n1}, then {v2} {n2 - n1} slide(s) later)")
 
 
+def check_axis_scales(prs, issues):
+    """Same-type native charts whose explicit value-axis maxima differ by
+    more than 10x read as a dishonest scale comparison."""
+    groups = defaultdict(list)  # chart_type -> [(slide_no, maximum_scale)]
+    for n, slide in enumerate(prs.slides, 1):
+        for shape in iter_shapes(slide.shapes):
+            if not getattr(shape, "has_chart", False):
+                continue
+            chart = shape.chart
+            try:
+                max_scale = chart.value_axis.maximum_scale
+            except ValueError:
+                continue  # pie/doughnut have no value axis
+            if max_scale is not None:
+                groups[chart.chart_type].append((n, max_scale))
+    for ctype, occ in groups.items():
+        if len(occ) < 2:
+            continue
+        (n_lo, lo) = min(occ, key=lambda o: o[1])
+        (n_hi, hi) = max(occ, key=lambda o: o[1])
+        if lo > 0 and hi > 10 * lo:
+            name = getattr(ctype, "name", str(ctype))
+            issues["warn"].append(
+                f"{name} charts on slides {n_lo} and {n_hi} have value-axis "
+                f"maxima {lo:g} vs {hi:g} (>10x apart) — possible dishonest "
+                "scale comparison")
+
+
 def collect_inventory(prs):
     """(fonts, colors): name/hex -> set of slide numbers using it."""
     fonts, colors = defaultdict(set), defaultdict(set)
@@ -237,6 +265,7 @@ def lint_deck(prs, palette_key=None):
     issues = {"error": [], "warn": []}
     check_jiggle(prs, issues)
     check_page_sequence(prs, issues)
+    check_axis_scales(prs, issues)
     inv = collect_inventory(prs)
     check_inventory(inv, issues, palette_key)
     check_fonts_installed(inv, issues)

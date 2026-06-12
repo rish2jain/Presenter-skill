@@ -10,6 +10,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
 import builders as B
+from charts import round_to_sum
 from helpers import warn
 
 NEG_HEX = "D9655B"   # waterfall decreases / down-trends (readable on all palettes)
@@ -549,6 +550,9 @@ def build_mekko_slide(prs, p, pal, ctx):
     x = 0.7
     for (label, vals), total in zip(data, totals):
         col_w = plot_w * (total / grand)
+        # largest-remainder so each column's segment labels sum to 100
+        pcts = (round_to_sum([v / total * 100 for v in vals])
+                if total else [0] * len(vals))
         y = bottom
         for i, v in enumerate(vals):
             seg_h = height * (v / total) if total else 0
@@ -557,7 +561,7 @@ def build_mekko_slide(prs, p, pal, ctx):
             B.add_rect(slide, x, y, col_w, seg_h, fill,
                        line_hex=pal["bg"], line_pt=0.75)
             if seg_h >= 0.34 and col_w >= 0.9:
-                B.add_tb(slide, f"{v / total * 100:.0f}%", x, y + seg_h / 2 - 0.16,
+                B.add_tb(slide, f"{pcts[i]:.0f}%", x, y + seg_h / 2 - 0.16,
                          col_w, 0.32, size=14, bold=True,
                          color=_label_color_on(fill, pal),
                          align=PP_ALIGN.CENTER, font=pal["font_body"])

@@ -202,3 +202,181 @@ def test_add_arrowhead_to_connector_noop_without_private_api(caplog):
     conn = SimpleNamespace(line=fake_line)
     assert add_arrowhead_to_connector(conn, warn=True) is False
     assert any("Skipping connector arrowhead" in r.message for r in caplog.records)
+
+
+# ── largest-remainder rounding ───────────────────────────────────────────────
+def test_round_to_sum_largest_remainder():
+    from charts import round_to_sum
+    assert round_to_sum([33.33, 33.33, 33.33]) == [33, 33, 34]
+
+
+def test_round_to_sum_preserves_order():
+    from charts import round_to_sum
+    assert round_to_sum([20.5, 60.2, 19.3]) == [21, 60, 19]
+
+
+def test_round_to_sum_negative_passthrough():
+    from charts import round_to_sum
+    assert round_to_sum([-10.4, 110.6]) == [-10, 111]
+
+
+def test_round_to_sum_decimals():
+    from charts import round_to_sum
+    assert round_to_sum([33.333, 33.333, 33.334], decimals=1) == \
+        [33.3, 33.3, 33.4]
+
+
+# ── value line annotation ────────────────────────────────────────────────────
+VLINE_MD = """## Slide 1: Pipeline coverage clears the 40-unit target
+**Layout:** two-column-split
+**Visual:** chart:bar
+- Value-Line: Target, 40
+**Data:**
+- 2023: 30
+- 2024: 44
+- Coverage improves every quarter
+"""
+
+
+def test_value_line_parses_and_renders_label():
+    _, slides = parse_outline(VLINE_MD)
+    assert slides[0]["value_line"] == "Target, 40"
+    slide = builders.LAYOUT_MAP["two-column-split"](_prs(), slides[0], PAL, CTX)
+    assert any(t == "Target" for t in _texts(slide)), _texts(slide)
+
+
+def test_value_line_outside_axis_range_warns_and_skips(capsys):
+    md = VLINE_MD.replace("Target, 40", "Target, 400")
+    _, slides = parse_outline(md)
+    slide = builders.LAYOUT_MAP["two-column-split"](_prs(), slides[0], PAL, CTX)
+    err = capsys.readouterr().err
+    assert "Value-Line" in err
+    assert not any(t == "Target" for t in _texts(slide)), _texts(slide)
+
+
+def test_value_line_unparsable_warns(capsys):
+    md = VLINE_MD.replace("Target, 40", "Target, forty")
+    _, slides = parse_outline(md)
+    slide = builders.LAYOUT_MAP["two-column-split"](_prs(), slides[0], PAL, CTX)
+    err = capsys.readouterr().err
+    assert "Value-Line" in err
+    assert not any(t == "Target" for t in _texts(slide)), _texts(slide)
+
+
+# ── stacked-100 dual labels ──────────────────────────────────────────────────
+STACK_MD = """## Slide 1: Mix shifts decisively toward subscriptions
+**Layout:** two-column-split
+**Visual:** chart:stacked-100
+**Series:** Subs, Services, Hardware
+- Labels: pct
+**Data:**
+- 2023: 1, 1, 1
+- 2024: 8.4, 7.6, 4
+- Subscriptions now carry the mix
+"""
+
+
+def _chart(slide):
+    return next(sh.chart for sh in slide.shapes
+                if getattr(sh, "has_chart", False))
+
+
+def _label_col(chart, j):
+    return [s.points[j].data_label.text_frame.text
+            for s in chart.plots[0].series]
+
+
+def test_stacked_100_chart_type_registered():
+    from pptx.enum.chart import XL_CHART_TYPE
+    from charts import CHART_TYPES
+    assert CHART_TYPES["stacked-100"] == XL_CHART_TYPE.COLUMN_STACKED_100
+
+
+def test_stacked_100_pct_labels_sum_to_100():
+    _, slides = parse_outline(STACK_MD)
+    assert slides[0]["labels_mode"] == "pct"
+    slide = builders.LAYOUT_MAP["two-column-split"](_prs(), slides[0], PAL, CTX)
+    chart = _chart(slide)
+    # 1/1/1 splits 33/33/34 via largest-remainder, not 33/33/33
+    assert _label_col(chart, 0) == ["33%", "33%", "34%"]
+    assert _label_col(chart, 1) == ["42%", "38%", "20%"]
+
+
+def test_stacked_100_abs_labels():
+    md = STACK_MD.replace("- Labels: pct", "- Labels: abs")
+    _, slides = parse_outline(md)
+    slide = builders.LAYOUT_MAP["two-column-split"](_prs(), slides[0], PAL, CTX)
+    assert _label_col(_chart(slide), 1) == ["8.4", "7.6", "4"]
+
+
+def test_stacked_100_both_labels():
+    md = STACK_MD.replace("- Labels: pct", "- Labels: both")
+    _, slides = parse_outline(md)
+    slide = builders.LAYOUT_MAP["two-column-split"](_prs(), slides[0], PAL, CTX)
+    assert _label_col(_chart(slide), 1) == \
+        ["42% (8.4)", "38% (7.6)", "20% (4)"]
+
+
+def test_stacked_100_bad_labels_mode_warns(capsys):
+    md = STACK_MD.replace("- Labels: pct", "- Labels: nope")
+    _, slides = parse_outline(md)
+    builders.LAYOUT_MAP["two-column-split"](_prs(), slides[0], PAL, CTX)
+    assert "Labels" in capsys.readouterr().err
+
+
+# ── same-scale groups ────────────────────────────────────────────────────────
+SCALE_MD = """**Scale-Group:** auto
+
+## Slide 1: Americas revenue compounds fastest
+**Layout:** two-column-split
+**Visual:** chart:column
+**Data:**
+- 2023: 30
+- 2024: 42
+- Americas leads growth
+
+## Slide 2: EMEA lags at the identical scale
+**Layout:** two-column-split
+**Visual:** chart:column
+**Data:**
+- 2023: 12
+- 2024: 17
+- EMEA trails on volume
+
+## Slide 3: Margin trend stands alone
+**Layout:** two-column-split
+**Visual:** chart:line
+**Data:**
+- 2023: 5
+- 2024: 6
+- Single line chart stays auto-scaled
+"""
+
+
+def test_scale_group_auto_shares_axis_max(capsys):
+    from build_deck import apply_scale_groups
+    meta, slides = parse_outline(SCALE_MD)
+    assert meta["scale_group"] == "auto"
+    slides = apply_scale_groups(meta, slides)
+    assert slides[0]["axis_max"] == 50  # _nice_ceil(42)
+    assert slides[1]["axis_max"] == 50
+    assert "axis_max" not in slides[2]  # group of one -> untouched
+    out = capsys.readouterr().out
+    assert "Scale-group" in out and "slides 1, 2" in out, out
+
+
+def test_scale_group_skips_explicit_axis_max():
+    from build_deck import apply_scale_groups
+    md = SCALE_MD.replace("- 2024: 17\n", "- 2024: 17\n- Axis-Max: 100\n")
+    meta, slides = parse_outline(md)
+    slides = apply_scale_groups(meta, slides)
+    assert slides[1]["axis_max"] == "100"   # explicit wins, slide excluded
+    assert "axis_max" not in slides[0]      # remaining group of one -> no-op
+
+
+def test_scale_group_off_by_default():
+    from build_deck import apply_scale_groups
+    md = SCALE_MD.replace("**Scale-Group:** auto\n\n", "")
+    meta, slides = parse_outline(md)
+    slides = apply_scale_groups(meta, slides)
+    assert all("axis_max" not in s for s in slides)

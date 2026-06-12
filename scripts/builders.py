@@ -207,6 +207,18 @@ def _place_visual(slide, prs, p, pal, ctx, left, top, w, h):
                 chart.value_axis.minimum_scale = 0.0
             except (ValueError, TypeError):
                 warn(f"Axis-Max not numeric: {p['axis_max']!r}")
+        if p.get("labels_mode") and value == "stacked-100":
+            from charts import LABEL_MODES, add_stacked_100_labels
+            if p["labels_mode"] in LABEL_MODES:
+                add_stacked_100_labels(chart, p["labels_mode"], pal)
+            else:
+                warn(f"Labels mode {p['labels_mode']!r} not one of "
+                     f"{'|'.join(LABEL_MODES)} — labels skipped")
+        # after Axis-Max so the line is placed against the final axis range
+        if p.get("value_line") and value in ("bar", "column", "line"):
+            from charts import add_value_line
+            add_value_line(slide, chart, pal, p["value_line"],
+                           *_sc(left, top, w, h))
         return
     if kind == "image":
         path = resolve_image_path(value, ctx)

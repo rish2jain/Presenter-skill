@@ -187,3 +187,39 @@ def test_lint_tolerates_non_list_chart_series():
         assert any("chart_series is not a list" in w for w in issues["warn"]), issues
     finally:
         PALETTES.pop("badseries", None)
+
+
+# ── value-axis scale comparison ──────────────────────────────────────────────
+def _chart_slide(prs, values, max_scale=None):
+    from palettes import get_palette
+    from charts import add_native_chart
+    slide = _blank(prs)
+    chart = add_native_chart(slide, get_palette("midnight-executive"),
+                             "column", ["A", "B"], values, 1.0, 1.0, 6.0, 4.0)
+    if max_scale is not None:
+        chart.value_axis.maximum_scale = float(max_scale)
+    return chart
+
+
+def test_axis_scale_mismatch_warned():
+    prs = _prs()
+    _chart_slide(prs, [3, 5], max_scale=10)
+    _chart_slide(prs, [300, 500], max_scale=500)
+    issues = lint_deck(prs)
+    assert any("dishonest scale" in w for w in issues["warn"]), issues
+
+
+def test_axis_scale_same_magnitude_passes():
+    prs = _prs()
+    _chart_slide(prs, [3, 5], max_scale=40)
+    _chart_slide(prs, [30, 44], max_scale=50)
+    issues = lint_deck(prs)
+    assert not any("dishonest scale" in w for w in issues["warn"]), issues
+
+
+def test_axis_scale_auto_axes_ignored():
+    prs = _prs()
+    _chart_slide(prs, [3, 5], max_scale=10)
+    _chart_slide(prs, [300, 500])  # auto axis -> not comparable
+    issues = lint_deck(prs)
+    assert not any("dishonest scale" in w for w in issues["warn"]), issues

@@ -42,6 +42,7 @@ FIELD_KEYS = {
     "Current": "current", "Situation": "situation",
     "Recommendation": "recommendation",
     "Bracket": "bracket", "CAGR": "cagr", "Axis-Max": "axis_max",
+    "Value-Line": "value_line", "Labels": "labels_mode",
     "X-axis": "x_axis", "Y-axis": "y_axis",
     "Q1": "q1", "Q2": "q2", "Q3": "q3", "Q4": "q4",
 }
@@ -87,7 +88,7 @@ META_KEYS = {"Palette": "palette", "Footer": "footer",
               "Density": "density", "Purpose": "purpose",
               "Variant": "variant", "Motif": "motif", "Takeaway": "takeaway",
               "Exhibits": "exhibits", "Auto-Agenda": "auto_agenda",
-              "Stamp": "stamp"}
+              "Stamp": "stamp", "Scale-Group": "scale_group"}
 
 
 def parse_outline(md_text):
@@ -280,6 +281,45 @@ def apply_auto_agenda(meta, slides):
             out.append(_agenda_slide(
                 sections, current=s.get("heading") or s.get("title", "")))
     return out
+
+
+# Chart kinds where sharing one value-axis maximum is meaningful (a value
+# axis exists and isn't a fixed 0-100% scale).
+SCALE_GROUP_KINDS = ("bar", "column", "hbar", "line", "area")
+
+
+def apply_scale_groups(meta, slides):
+    """**Scale-Group:** auto — slides whose chart visuals share a kind get one
+    common axis maximum (honest visual comparison). Slides with an explicit
+    Axis-Max are left alone; groups need 2+ slides. Default: off."""
+    if meta.get("scale_group", "").lower() != "auto":
+        return slides
+    groups = {}  # chart kind -> [(slide_no, slide_dict, data_max)]
+    for i, p in enumerate(slides, 1):
+        kind, value = parse_visual(p.get("visual", ""))
+        if kind != "chart" or value not in SCALE_GROUP_KINDS \
+                or p.get("axis_max"):
+            continue
+        nums = []
+        for _, v in p.get("data", []):
+            if isinstance(v, list):
+                nums.extend(x for x in v if isinstance(x, (int, float)))
+            elif isinstance(v, (int, float)):
+                nums.append(v)
+        if not nums:
+            continue
+        groups.setdefault(value, []).append((i, p, max(nums)))
+    for chart_kind, members in groups.items():
+        if len(members) < 2:
+            continue
+        from charts import _nice_ceil
+        axis_max = _nice_ceil(max(m for _, _, m in members))
+        for _, p, _ in members:
+            p["axis_max"] = axis_max
+        where = ", ".join(str(i) for i, _, _ in members)
+        print(f"  Scale-group: {chart_kind} charts on slides {where} "
+              f"share axis max {axis_max:g}")
+    return slides
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
@@ -624,6 +664,7 @@ def build(outline_path, output_path, palette_key=None,
               file=sys.stderr)
     meta, slides_data = parse_outline(outline_path.read_text(encoding="utf-8"))
     slides_data = apply_auto_agenda(meta, slides_data)
+    slides_data = apply_scale_groups(meta, slides_data)
 
     import builders
     variant_key = variant or meta.get("variant", "")
