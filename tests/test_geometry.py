@@ -1,5 +1,8 @@
 """Tests for geometry_report.py per-slide layout metrics."""
+import io
+import struct
 import sys
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +47,24 @@ def _textbox(slide, left, top, w, h, text="word " * 40, pt=18):
     return tb
 
 
+def _png_bytes():
+    """Minimal 1x1 RGB PNG, no Pillow dependency."""
+    def chunk(tag, data):
+        body = tag + data
+        return struct.pack(">I", len(data)) + body \
+            + struct.pack(">I", zlib.crc32(body))
+    ihdr = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    idat = zlib.compress(b"\x00\xff\x00\x00")
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", idat) + chunk(b"IEND", b""))
+
+
+def _picture(slide, left, top, w, h):
+    return slide.shapes.add_picture(
+        io.BytesIO(_png_bytes()),
+        Inches(left), Inches(top), Inches(w), Inches(h))
+
+
 def _slide_metrics(prs):
     return geo.analyze_deck(prs)[1]
 
@@ -76,6 +97,49 @@ def test_text_under_solid_shape_reported():
     _solid_rect(slide, 1.0, 1.4, 3.0, 1.0)       # solid band over the text
     m = _slide_metrics(prs)
     assert len(m["overlaps"]) == 1, m
+
+
+def test_picture_over_text_reported():
+    """A picture has no .fill but always paints — drawn over earlier
+    body text it occludes the glyphs and must be reported."""
+    prs = _prs()
+    slide = _blank(prs)
+    _textbox(slide, 1.0, 1.0, 3.0, 1.0)          # text below
+    _picture(slide, 2.0, 0.8, 4.0, 2.0)          # picture on top of glyphs
+    m = _slide_metrics(prs)
+    assert len(m["overlaps"]) == 1, m
+
+
+def test_picture_under_label_suppressed():
+    """Label drawn over an image is the standard caption pattern."""
+    prs = _prs()
+    slide = _blank(prs)
+    _picture(slide, 1.0, 1.0, 4.0, 3.0)          # image below
+    _textbox(slide, 3.5, 1.5, 2.5, 0.6, text="Chart label", pt=12)
+    m = _slide_metrics(prs)
+    assert m["overlaps"] == [], m
+
+
+def test_text_buried_under_later_solid_reported():
+    """Earlier text 100% contained in a later-drawn solid shape is
+    completely hidden — containment must not suppress it."""
+    prs = _prs()
+    slide = _blank(prs)
+    _textbox(slide, 2.0, 2.0, 4.0, 1.5)          # text drawn first
+    _solid_rect(slide, 1.8, 1.8, 4.4, 1.9)       # solid fully covers it
+    m = _slide_metrics(prs)
+    assert len(m["overlaps"]) == 1, m
+
+
+def test_text_on_own_card_suppressed():
+    """Text box placed on its own card (card drawn first) is the
+    standard card pattern — child-on-card containment stays quiet."""
+    prs = _prs()
+    slide = _blank(prs)
+    _solid_rect(slide, 1.0, 1.0, 4.0, 2.0)       # card drawn first
+    _textbox(slide, 1.2, 1.2, 3.6, 1.6, text="Card body copy", pt=12)
+    m = _slide_metrics(prs)
+    assert m["overlaps"] == [], m
 
 
 def test_label_above_bar_suppressed():
@@ -183,6 +247,31 @@ def test_text_box_near_miss_suppressed():
     slide = _blank(prs)
     _rect(slide, 1.0, 1.0, 2.0, 1.0)
     _textbox(slide, 6.0, 1.05, 2.0, 1.0, text="Label", pt=12)
+    m = _slide_metrics(prs)
+    assert m["near_misses"] == [], m
+
+
+def test_solid_text_card_near_miss_reported():
+    """Solid-filled cards bearing text align by their painted box edge,
+    so a 0.06in left-edge offset between two cards is a real defect."""
+    prs = _prs()
+    slide = _blank(prs)
+    card1 = _solid_rect(slide, 1.00, 1.0, 3.00, 1.5)
+    card1.text_frame.text = "Workstream alpha status"
+    card2 = _solid_rect(slide, 1.06, 3.0, 3.10, 1.5)
+    card2.text_frame.text = "Workstream beta status"
+    m = _slide_metrics(prs)
+    assert any(n["edge"] == "left" and abs(n["off_in"] - 0.06) < 0.011
+               for n in m["near_misses"]), m
+
+
+def test_plain_textbox_near_miss_still_suppressed():
+    """Borderless unfilled text boxes align by glyph edge — a 0.06in
+    box-edge offset between them stays suppressed."""
+    prs = _prs()
+    slide = _blank(prs)
+    _textbox(slide, 1.00, 1.0, 3.00, 1.0, text="Alpha summary", pt=12)
+    _textbox(slide, 1.06, 3.0, 3.10, 1.0, text="Beta summary", pt=12)
     m = _slide_metrics(prs)
     assert m["near_misses"] == [], m
 

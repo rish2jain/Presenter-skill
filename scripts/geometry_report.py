@@ -5,16 +5,20 @@ self-verification *before* any render (cheap; no LibreOffice needed).
 
 Per slide:
   (a) pairwise overlaps of visible shapes, z-order aware (containment =
-      card/background pattern, ignored; labels drawn over bars/cards and
-      solid-on-solid layering = intentional, suppressed; text-on-text and
-      text hidden under a solid shape = reported whenever the estimated
-      glyph areas — not just the oversized text boxes — actually cross)
+      card/background pattern, ignored — except earlier-drawn text fully
+      buried under a later solid shape or picture, which is reported;
+      labels drawn over bars/cards/images and solid-on-solid layering =
+      intentional, suppressed; text-on-text and text hidden under a solid
+      shape or picture = reported whenever the estimated glyph areas —
+      not just the oversized text boxes — actually cross)
   (b) gap consistency: uneven spacing within shape rows/columns (runs are
       split at large gaps — separate visual groups judged independently)
   (c) near-misses: edges almost aligned (off by < 0.08in), between
-      structural (non-text) shapes only — a text frame's visible edge is
-      its inset glyph edge, not its box edge; pairs sharing the opposite
-      edge of the same axis are data-driven sizes (bar lengths), skipped
+      structural shapes — non-text, plus solid-filled cards whose painted
+      box edge is the visible edge even when they bear text; a plain text
+      frame's visible edge is its inset glyph edge, not its box edge, so
+      those are skipped; pairs sharing the opposite edge of the same axis
+      are data-driven sizes (bar lengths), skipped
   (d) whitespace ratio + left/right and top/bottom visual-mass imbalance
   (e) word count (> 90 words = text overload)
 
@@ -64,8 +68,17 @@ CROWDED_WS = 0.20           # whitespace ratio below this = crowded
 IMBALANCE_PP = 60.0         # half-vs-half coverage gap (percentage points)
 
 
+_PICTURE_TYPES = (MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.LINKED_PICTURE)
+
+
 def _is_solid(shape):
-    """Explicit solid (or gradient) fill — occludes whatever is below."""
+    """Occludes whatever is below: explicit solid (or gradient) fill, or
+    a picture — pictures have no .fill but their raster always paints."""
+    try:
+        if shape.shape_type in _PICTURE_TYPES:
+            return True
+    except Exception:
+        pass
     try:
         return shape.fill.type in (MSO_FILL.SOLID, MSO_FILL.GRADIENT)
     except Exception:
@@ -150,10 +163,12 @@ def _contained(a, b):
 
 def find_overlaps(boxes):
     """Z-order-aware overlap classification (boxes arrive lowest-z first).
-    Text-on-text and text hidden under a solid shape are the defects —
-    judged on estimated glyph areas, not the oversized text boxes; a
-    label drawn over a bar/card/band and solid-on-solid layering are
-    the standard intentional patterns and are suppressed."""
+    Text-on-text and text hidden under a solid shape or picture are the
+    defects — judged on estimated glyph areas, not the oversized text
+    boxes — and text fully buried under a later-drawn occluding shape is
+    reported even though it is containment; a label drawn over a
+    bar/card/band/image and solid-on-solid layering are the standard
+    intentional patterns and are suppressed."""
     out = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
@@ -161,8 +176,14 @@ def find_overlaps(boxes):
             area = _inter_area(lo, hi)
             if area <= OVERLAP_MIN_SQIN:
                 continue
+            if _contained(lo, hi) and lo["txt"] and hi["solid"]:
+                # earlier-drawn text fully under a later solid/picture
+                # shape = buried text — worse than partial coverage
+                out.append({"a": lo["name"], "b": hi["name"],
+                            "area_sqin": round(area, 2)})
+                continue
             if _contained(lo, hi) or _contained(hi, lo):
-                continue  # card/background pattern — intentional
+                continue  # card/background or child-on-card — intentional
             if lo["txt"] and hi["txt"]:
                 if _inter_area(lo["glyph"], hi["glyph"]) <= OVERLAP_MIN_SQIN:
                     continue  # boxes touch but rendered text cannot
@@ -263,10 +284,12 @@ _OPPOSITE = {"left": "right", "right": "left",
 
 
 def find_near_misses(boxes):
-    """Edge near-misses between structural (non-text) shapes.  Text
-    frames align by their inset glyph edge, not their box edge, so
-    box-edge deltas this small are invisible for them.  Pairs exactly
-    co-aligned on the opposite edge of the same axis are skipped too:
+    """Edge near-misses between structural shapes: non-text shapes plus
+    solid-filled cards — a card's painted box edge IS its visible edge,
+    text or not.  Plain text frames align by their inset glyph edge, not
+    their box edge, so box-edge deltas this small are invisible for them
+    and they are skipped.  Pairs exactly co-aligned on the opposite edge
+    of the same axis are skipped too:
     there the difference is a data-driven width or height (bars off a
     shared spine/baseline), not a misalignment."""
     top = _top_level(boxes)
@@ -274,7 +297,7 @@ def find_near_misses(boxes):
     for i in range(len(top)):
         for j in range(i + 1, len(top)):
             a, b = top[i], top[j]
-            if a["txt"] or b["txt"]:
+            if (a["txt"] and not a["solid"]) or (b["txt"] and not b["solid"]):
                 continue  # glyph edge, not box edge, is what aligns
             for edge, f in _EDGES:
                 d = round(abs(f(a) - f(b)), 3)
