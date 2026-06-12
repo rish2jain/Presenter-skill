@@ -8,7 +8,7 @@ Built for tech-strategy work: action titles, SCQA executive summaries, value-bri
 
 ## Features
 
-**28 layouts.** Core set (title, agenda, section dividers, bullets, two-column + chart/image, cards, stat callouts, timeline, comparison, table, full-bleed image, quote) plus a consulting set:
+**29 layouts.** Core set (title, agenda, section dividers, bullets, two-column + chart/image, cards, stat callouts, timeline, comparison, table, full-bleed image, quote) plus a consulting set:
 
 | Layout | Use |
 |---|---|
@@ -45,6 +45,8 @@ pip install -r ~/.claude/skills/presentation-skill/requirements.txt
 # optional, for high-fidelity visual QA + HEIC images + SVG icons:
 brew install --cask libreoffice && brew install poppler
 pip install pillow-heif cairosvg
+# optional, much faster repeated QA renders (run `unoserver` in the background):
+pip install unoserver
 ```
 
 Claude Code discovers the skill automatically; asking for "a consulting deck on X" triggers it.
@@ -56,6 +58,7 @@ cd ~/.claude/skills/presentation-skill
 python3 scripts/build_deck.py assets/example-outline.md --check     # validate
 python3 scripts/build_deck.py assets/example-outline.md --output deck.pptx
 python3 scripts/qa_check.py deck.pptx                               # programmatic QA
+python3 scripts/pptx_lint.py deck.pptx --palette midnight-executive # deck-wide lint
 python3 scripts/render_slides.py deck.pptx --grid --out thumbs/     # visual QA
 ```
 
@@ -75,6 +78,7 @@ Outline syntax in a nutshell:
 - Platform exit: -6
 - Commit discounts: -4
 - FY27 target: total
+- Bracket: FY25 run-rate, FY27 target
 - Source: "Bottom-up estimate per initiative charter"
 - Notes: "Walk the bridge left to right."
 ```
@@ -84,7 +88,7 @@ Full syntax for every layout: [`references/generation-guide.md`](references/gene
 ## Tests
 
 ```bash
-python3 -m pytest tests/      # 36 tests
+python3 -m pytest tests/      # 91 tests
 python3 scripts/smoke_test.py # build + QA the example deck end-to-end
 ```
 
@@ -94,7 +98,7 @@ python3 scripts/smoke_test.py # build + QA the example deck end-to-end
 SKILL.md            entry point — phases, modes, QA protocol
 references/         lazily-loaded guides (generation, storyline, editing, QA, ...)
 scripts/            build_deck, builders(+consulting), charts, qa_check,
-                    edit_deck, render_slides, prep_images, fetch_icon, ...
+                    pptx_lint, edit_deck, render_slides, prep_images, ...
 tests/              pytest suite
 assets/             example outline
 ```
