@@ -229,7 +229,13 @@ def check_image_alt(shape, issues, where, accessibility=False):
 
 
 def _tc_merged(tc):
-    if int(tc.get("gridSpan") or 1) > 1 or int(tc.get("rowSpan") or 1) > 1:
+    def _span(name):
+        v = tc.get(name)
+        try:
+            return int(v) if v else 1
+        except ValueError:
+            return 1
+    if _span("gridSpan") > 1 or _span("rowSpan") > 1:
         return True
     return tc.get("hMerge") in ("1", "true") or tc.get("vMerge") in ("1", "true")
 

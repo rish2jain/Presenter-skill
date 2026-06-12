@@ -425,6 +425,25 @@ def test_a11y_merged_cells_warned(tmp_path):
     assert any("merged cells" in w for w in issues["warn"]), issues
 
 
+def test_a11y_merged_cells_nonnumeric_gridspan_no_crash(tmp_path):
+    """_tc_merged must not raise ValueError when gridSpan is non-numeric."""
+    prs = _prs()
+    _table_slide(prs)
+    # Inject a malformed gridSpan attribute directly on the first tc element
+    from pptx.oxml.ns import qn
+    slide = prs.slides[-1]
+    tbl = next(
+        sh.table._tbl
+        for sh in slide.shapes
+        if getattr(sh, "has_table", False)
+    )
+    tc = next(tbl.iter(qn("a:tc")))
+    tc.set("gridSpan", "true")  # non-numeric — would previously raise ValueError
+    issues = _qa(prs, tmp_path)  # must not raise
+    # The cell is treated as non-merged (span defaults to 1), so no merged-cells warning
+    assert not any("merged cells" in w for w in issues["warn"]), issues
+
+
 def test_a11y_table_checks_off_in_default_mode(tmp_path):
     prs = _prs()
     gf = _table_slide(prs)
