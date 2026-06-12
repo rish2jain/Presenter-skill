@@ -227,7 +227,7 @@ Generic bullets (`- text`) work on `bullet-list`, `two-column-split`, `exec-summ
 - Milestone: Row="Platform" Label="GA" At="3"
 ```
 
-`**Benchmark:** <value> "label"` adds a dashed reference line to bar/column/line/area charts. `**Exhibits:** on` (front-matter) numbers every sourced slide's footnote "Exhibit N · Source: ...". `agenda` slides highlight the row matching `- Current: "Section name"`. Section dividers automatically set the top-right section kicker on subsequent content slides.
+`**Benchmark:** <value> "label"` adds a dashed reference line to bar/column/line/area charts. `**Exhibits:** on` (front-matter) numbers every sourced slide's footnote "Exhibit N · Source: ...". `agenda` slides highlight the row matching `- Current: "Section name"`. Section dividers automatically set the top-right section tracker label on subsequent content slides (`- Kicker:` is the bottom takeaway band — a different element).
 
 ---
 
@@ -296,6 +296,26 @@ both are present.
   the current section highlighted after every section divider.
 - `**Stamp:** DRAFT` — bordered status tag on every slide (also:
   CONFIDENTIAL, FOR DISCUSSION).
+
+**Per-slide tags:**
+- `- Sticker: ILLUSTRATIVE` — small bordered tag top-right (free text,
+  uppercased; e.g. NON-EXHAUSTIVE, PRELIMINARY, BACKUP, FOR DISCUSSION).
+  Visual mirror of the deck-level `**Stamp:**`, which stays top-left.
+  Coexists with the section label: the sticker drops below it when both
+  are present.
+- `- Kicker: "So-what sentence"` — bold takeaway band across the bottom of
+  the content area, just above the source/footer. Make it advance the
+  argument — `--check` warns when it merely restates the slide title.
+  Skipped on title/closing/section-divider/full-image layouts.
+
+**Action-title lint (`--check`, warnings):** on action-title layouts,
+headings over 15 words, exhibit headings (chart visuals, waterfall, mekko,
+bar-mekko, chart-callout) with no number, and headings joining two messages
+with " and " are flagged.
+
+**AI-tell lint (`pptx_lint.py`):** thin accent lines under titles and long
+centered body copy — both hallmarks of AI-generated decks — are warned on
+any .pptx, including imported ones.
 
 **Chart/exhibit directives (per slide):**
 - `- Axis-Max: 50` — pin the chart value axis; use the same value on sibling

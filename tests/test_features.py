@@ -169,6 +169,120 @@ def test_custom_palette_rejects_short_chart_series(tmp_path):
     assert "short-series" not in PALETTES
 
 
+def test_sticker_and_kicker_parsed():
+    md = ('## Slide 1: Revenue doubled on pricing discipline\n'
+          '- Sticker: Illustrative\n'
+          '- Kicker: "Lock in pricing gains before renewals"\n')
+    _, slides = parse_outline(md)
+    assert slides[0]["sticker"] == "Illustrative"
+    assert slides[0]["kicker"] == "Lock in pricing gains before renewals"
+
+
+def test_kicker_restating_title_warned():
+    md = ('## Slide 1: Revenue doubled across all regions this year\n'
+          '**Layout:** bullet-list\n'
+          '- Kicker: "Revenue doubled across all regions"\n'
+          '- Point 1: "Growth was broad-based"\n'
+          '- Notes: "n"\n')
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert any("kicker restates the title" in w for w in warnings), warnings
+
+
+def test_kicker_advancing_argument_not_warned():
+    md = ('## Slide 1: Revenue doubled across all regions this year\n'
+          '**Layout:** bullet-list\n'
+          '- Kicker: "Approve the follow-on investment before quarter close"\n'
+          '- Point 1: "Growth was broad-based"\n'
+          '- Notes: "n"\n')
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert not any("kicker restates" in w for w in warnings), warnings
+
+
+def test_heading_over_15_words_warned():
+    heading = " ".join(["word"] * 16)
+    md = (f'## Slide 1: {heading}\n'
+          '**Layout:** bullet-list\n- Point 1: "x"\n- Notes: "n"\n')
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert any("exceeds 15 words" in w for w in warnings), warnings
+
+
+def test_exhibit_heading_without_number_warned():
+    md = ('## Slide 1: Margins expanded sharply on pricing discipline\n'
+          '**Layout:** waterfall\n'
+          '**Data:**\n- FY24: 42\n- Pricing: +9\n- FY25: total\n'
+          '- Notes: "n"\n')
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert any("no number" in w for w in warnings), warnings
+
+
+def test_exhibit_heading_with_number_not_warned():
+    md = ('## Slide 1: Margins expanded 400bps on pricing discipline\n'
+          '**Layout:** waterfall\n'
+          '**Data:**\n- FY24: 42\n- Pricing: +9\n- FY25: total\n'
+          '- Notes: "n"\n')
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert not any("no number" in w for w in warnings), warnings
+
+
+def test_heading_with_and_warned():
+    md = ('## Slide 1: We doubled revenue and we cut operating costs\n'
+          '**Layout:** bullet-list\n- Point 1: "x"\n- Notes: "n"\n')
+    meta, slides = parse_outline(md)
+    _, warnings = validate(slides, CTX, meta)
+    assert any("joins two messages" in w for w in warnings), warnings
+
+
+def test_sticker_and_kicker_rendered(tmp_path):
+    from pptx import Presentation
+    md = ('## Slide 1: Margins expanded 400bps on pricing discipline\n'
+          '**Layout:** bullet-list\n'
+          '- Sticker: Illustrative\n'
+          '- Kicker: "Lock in pricing gains before renewals"\n'
+          '- Pricing actions held through renewals\n'
+          '- Notes: "n"\n')
+    outline = tmp_path / "o.md"
+    outline.write_text(md)
+    out = tmp_path / "deck.pptx"
+    assert build(outline, out)
+    prs = Presentation(str(out))
+    texts = {sh.text_frame.text for sh in prs.slides[0].shapes
+             if sh.has_text_frame}
+    assert "ILLUSTRATIVE" in texts, texts
+    assert "Lock in pricing gains before renewals" in texts, texts
+    # sticker tag sits top-right (no section label -> y ~0.14)
+    tag = [sh for sh in prs.slides[0].shapes
+           if sh.has_text_frame and sh.text_frame.text == "ILLUSTRATIVE"][0]
+    assert abs(tag.top / 914400 - 0.16) < 0.05, tag.top
+    # kicker box top ~6.18
+    kick = [sh for sh in prs.slides[0].shapes
+            if sh.has_text_frame
+            and sh.text_frame.text == "Lock in pricing gains before renewals"][0]
+    assert 6.1 < kick.top / 914400 < 6.5, kick.top
+
+
+def test_sticker_drops_below_section_label(tmp_path):
+    from pptx import Presentation
+    md = ('## Slide 1: Growth\n**Layout:** section-divider\n'
+          '## Slide 2: Margins expanded 400bps on pricing discipline\n'
+          '**Layout:** bullet-list\n'
+          '- Sticker: Preliminary\n'
+          '- Pricing actions held through renewals\n'
+          '- Notes: "n"\n')
+    outline = tmp_path / "o.md"
+    outline.write_text(md)
+    out = tmp_path / "deck.pptx"
+    assert build(outline, out)
+    prs = Presentation(str(out))
+    tag = [sh for sh in prs.slides[1].shapes
+           if sh.has_text_frame and sh.text_frame.text == "PRELIMINARY"][0]
+    assert abs(tag.top / 914400 - 0.52) < 0.05, tag.top
+
+
 def test_dump_numbers_extracts_per_slide(capsys, tmp_path):
     from pptx import Presentation
     from pptx.util import Inches

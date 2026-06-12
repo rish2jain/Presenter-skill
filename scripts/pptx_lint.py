@@ -5,8 +5,8 @@ pptx_lint.py — deterministic cross-slide consistency lint for a .pptx.
 Complements qa_check.py (per-slide defects) with deck-wide checks in the
 Macabacus "Deck Check" / UpSlide "Slide Check" class:
 
-  1. Anti-jiggle: recurring elements (page numbers, footers, kickers) must sit
-     at identical coordinates on every slide.
+  1. Anti-jiggle: recurring elements (page numbers, footers, section labels)
+     must sit at identical coordinates on every slide.
   2. Page-number sequence: consecutive, no gaps or duplicates.
   3. Font inventory: more than MAX_FONTS distinct fonts reads as inconsistent.
   4. Color inventory / palette whitelist: with --palette, any explicit run or
@@ -163,6 +163,68 @@ def check_axis_scales(prs, issues):
                 "scale comparison")
 
 
+LINE_H_MAX_EMU = 76200          # 6pt — thicker than this isn't a "line"
+MIN_BODY_SHAPES = 4             # fewer shapes = title/quote/big-number slide
+
+
+def check_ai_tells(prs, issues):
+    """Hallmarks of AI-generated decks: a thin accent line under the title,
+    and long centered body copy."""
+    from pptx.enum.text import PP_ALIGN
+    from pptx.util import Pt
+    for n, slide in enumerate(prs.slides, 1):
+        shapes = list(iter_shapes(slide.shapes))
+        # (a) accent line under the title
+        title_bottoms = []
+        seen_text = False
+        for shape in shapes:
+            if not getattr(shape, "has_text_frame", False) \
+                    or not shape.text_frame.text.strip():
+                continue
+            if None in (shape.top, shape.height):
+                continue
+            first = not seen_text
+            seen_text = True
+            if shape.top >= 1.2 * EMU_IN:
+                continue
+            sizes = [r.font.size for para in shape.text_frame.paragraphs
+                     for r in para.runs if r.font.size is not None]
+            if first or (sizes and max(sizes) >= Pt(20)):
+                title_bottoms.append(shape.top + shape.height)
+        for shape in shapes:
+            if getattr(shape, "has_text_frame", False) \
+                    and shape.text_frame.text.strip():
+                continue  # text shapes are not accent lines
+            try:
+                if None in (shape.top, shape.width, shape.height):
+                    continue
+            except AttributeError:
+                continue
+            if shape.height > LINE_H_MAX_EMU or shape.width < EMU_IN:
+                continue
+            if any(0 <= shape.top - b <= 0.25 * EMU_IN for b in title_bottoms):
+                issues["warn"].append(
+                    f"slide {n}: accent line under title (AI-generated look) "
+                    "— remove")
+        # (b) long centered body text (sparse slides are intentional centers)
+        if len(shapes) < MIN_BODY_SHAPES:
+            continue
+        for shape in shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            tf = shape.text_frame
+            if len(tf.text.strip()) <= 80:
+                continue
+            if None in (shape.top, shape.height) \
+                    or shape.top <= 1.5 * EMU_IN or shape.height <= EMU_IN:
+                continue
+            if any(para.alignment == PP_ALIGN.CENTER
+                   for para in tf.paragraphs if para.runs):
+                issues["warn"].append(
+                    f"slide {n}: long centered body text — left-align "
+                    "body copy")
+
+
 def collect_inventory(prs):
     """(fonts, colors): name/hex -> set of slide numbers using it."""
     fonts, colors = defaultdict(set), defaultdict(set)
@@ -266,6 +328,7 @@ def lint_deck(prs, palette_key=None):
     check_jiggle(prs, issues)
     check_page_sequence(prs, issues)
     check_axis_scales(prs, issues)
+    check_ai_tells(prs, issues)
     inv = collect_inventory(prs)
     check_inventory(inv, issues, palette_key)
     check_fonts_installed(inv, issues)

@@ -189,6 +189,81 @@ def test_lint_tolerates_non_list_chart_series():
         PALETTES.pop("badseries", None)
 
 
+# ── AI-tell checks ───────────────────────────────────────────────────────────
+def _rect(slide, left, top, w, h):
+    from pptx.enum.shapes import MSO_SHAPE
+    return slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(left), Inches(top), Inches(w), Inches(h))
+
+
+def test_accent_line_under_title_flagged():
+    prs = _prs()
+    slide = _blank(prs)
+    _tb(slide, "Strong takeaway title", 0.7, 0.5, w=8.0, h=0.6, size=28)
+    _rect(slide, 0.7, 1.15, 3.0, 0.05)  # thin bar just under title bottom
+    issues = lint_deck(prs)
+    assert any("accent line under title" in w for w in issues["warn"]), issues
+
+
+def test_thin_bar_far_from_title_passes():
+    prs = _prs()
+    slide = _blank(prs)
+    _tb(slide, "Strong takeaway title", 0.7, 0.5, w=8.0, h=0.6, size=28)
+    _rect(slide, 0.7, 4.0, 3.0, 0.05)  # divider mid-slide, not under title
+    issues = lint_deck(prs)
+    assert not any("accent line" in w for w in issues["warn"]), issues
+
+
+def _centered_body_slide(prs, align, n_extra=3):
+    from pptx.enum.text import PP_ALIGN
+    slide = _blank(prs)
+    _tb(slide, "Title", 0.7, 0.3, w=8.0, h=0.6, size=28)
+    for i in range(n_extra - 1):
+        _tb(slide, f"label {i}", 0.7 + i * 3, 1.0)
+    tb = _tb(slide, "Centered paragraphs of body copy are a hallmark of "
+             "AI-generated slides and hurt scanability for readers.",
+             2.0, 2.0, w=9.0, h=1.5, size=14)
+    tb.text_frame.paragraphs[0].alignment = align
+    return slide
+
+
+def test_long_centered_body_flagged():
+    from pptx.enum.text import PP_ALIGN
+    prs = _prs()
+    _centered_body_slide(prs, PP_ALIGN.CENTER)
+    issues = lint_deck(prs)
+    assert any("centered body" in w for w in issues["warn"]), issues
+
+
+def test_left_aligned_body_passes():
+    from pptx.enum.text import PP_ALIGN
+    prs = _prs()
+    _centered_body_slide(prs, PP_ALIGN.LEFT)
+    issues = lint_deck(prs)
+    assert not any("centered body" in w for w in issues["warn"]), issues
+
+
+def test_centered_text_on_sparse_slide_passes():
+    """<=3 shapes = quote/big-number territory; centered is intentional."""
+    from pptx.enum.text import PP_ALIGN
+    prs = _prs()
+    slide = _blank(prs)
+    tb = _tb(slide, "A pull quote that is deliberately centered and long "
+             "enough to clear the eighty character threshold easily.",
+             2.0, 2.5, w=9.0, h=1.5, size=20)
+    tb.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+    issues = lint_deck(prs)
+    assert not any("centered body" in w for w in issues["warn"]), issues
+
+
+def test_placeholder_rx_catches_ai_tell_text():
+    from qa_check import PLACEHOLDER_RX
+    assert PLACEHOLDER_RX.search("This slide layout works for comparisons")
+    assert PLACEHOLDER_RX.search("This page layout is versatile")
+    assert PLACEHOLDER_RX.search("Lorem Ipsum dolor sit amet")
+    assert not PLACEHOLDER_RX.search("Margins expanded 400bps")
+
+
 # ── value-axis scale comparison ──────────────────────────────────────────────
 def _chart_slide(prs, values, max_scale=None):
     from palettes import get_palette

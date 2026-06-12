@@ -13,6 +13,7 @@
 - Point 1: "Phase 1 GPU cluster deployed ahead of schedule, saving $2.1M annually"
 - Point 2: "Hybrid cloud migration 62% complete — on track for Q4"
 - Point 3: "Developer platform beta launched with 312 design partners"
+- Kicker: "Approve Phase 2 GPU budget this quarter to hold the savings run-rate"
 - Notes: "Walk through each priority; emphasize the $14.2M total value figure."
 
 ## Slide 3: Market Opportunity
@@ -29,6 +30,7 @@
 - Infrastructure layer captures 41% of total AI spend
 - Top 5 hyperscalers account for 68% of capex
 - Mid-market segment growing fastest at 47% CAGR
+- Sticker: Illustrative
 - Notes: "Chart tells the growth story; bullets add market structure context."
 
 ## Slide 4: Key Metrics

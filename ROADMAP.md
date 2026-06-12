@@ -48,7 +48,7 @@ think-cell-parity label/scale behaviors. Files: `scripts/charts.py`, `scripts/bu
 
 Acceptance: new tests pass; `smoke_test.py` green; charts-guide documents all four.
 
-## T3. Stamps, stickers, kicker box, title lint, AI-tell lint — `[ ]`
+## T3. Stamps, stickers, kicker box, title lint, AI-tell lint — `[x]`
 
 Files: `scripts/build_deck.py`, `scripts/builders.py` (small helpers),
 `scripts/pptx_lint.py`, `references/generation-guide.md`, `tests/test_features.py`,

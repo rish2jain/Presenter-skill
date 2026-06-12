@@ -45,6 +45,7 @@ FIELD_KEYS = {
     "Value-Line": "value_line", "Labels": "labels_mode",
     "X-axis": "x_axis", "Y-axis": "y_axis",
     "Q1": "q1", "Q2": "q2", "Q3": "q3", "Q4": "q4",
+    "Sticker": "sticker", "Kicker": "kicker",
 }
 
 
@@ -383,6 +384,31 @@ def validate(slides, ctx, meta=None):
                 "not an action title — state the takeaway as a sentence "
                 "(run --titles for the titles test)")
 
+        if layout in ACTION_TITLE_LAYOUTS and not p.get("_appendix"):
+            heading = p.get("heading", "")
+            if len(heading.split()) > 15:
+                warnings.append(f"{where}: heading exceeds 15 words — "
+                                "tighten the takeaway")
+            chart_ish = parse_visual(p.get("visual", ""))[0] == "chart" or \
+                layout in ("waterfall", "mekko", "bar-mekko", "chart-callout")
+            if chart_ish and heading and not any(c.isdigit() for c in heading):
+                warnings.append(f"{where}: exhibit slide heading has no "
+                                "number — quantify the takeaway")
+            if " and " in heading.lower():
+                warnings.append(f"{where}: heading joins two messages with "
+                                "'and' — consider splitting the slide")
+
+        if p.get("kicker"):
+            kick_words = {w for w in re.findall(r"[a-z0-9']+",
+                                                p["kicker"].lower())
+                          if len(w) > 3}
+            head_words = {w for w in re.findall(r"[a-z0-9']+",
+                                                p.get("heading", "").lower())
+                          if len(w) > 3}
+            if kick_words and len(kick_words & head_words) / len(kick_words) > 0.6:
+                warnings.append(f"{where}: kicker restates the title — "
+                                "make it advance the argument")
+
         if layout in ("title", "closing") and not p.get("title") and p.get("heading"):
             warnings.append(f"{where}: no '- Title:' — using '## Slide N:' heading "
                             f"({p['heading']!r}) as title text")
@@ -612,7 +638,7 @@ def _add_footer(slide, i, pal, footer, page_numbers, appendix=False):
                         align=PP_ALIGN.RIGHT)
 
 
-def _add_kicker(slide, pal, section):
+def _add_section_tracker(slide, pal, section):
     """Section tracker: small current-section label top-right (consulting
     navigation convention for long decks)."""
     if not section:
@@ -622,6 +648,32 @@ def _add_kicker(slide, pal, section):
     builders.add_tb(slide, section.upper(), 7.6, 0.12, 5.0, 0.32, size=11,
                     bold=True, color=pal["text_muted"], font=pal["font_label"],
                     align=PP_ALIGN.RIGHT)
+
+
+def _add_sticker(slide, pal, text, below_section=False):
+    """Per-slide bordered status tag (ILLUSTRATIVE, PRELIMINARY...) top-right;
+    drops below the section tracker label when both are present."""
+    import builders
+    from pptx.enum.text import PP_ALIGN
+    label = text.upper()
+    w = min(3.0, max(1.2, 0.12 * len(label)))
+    left = 12.63 - w
+    top = 0.50 if below_section else 0.14
+    box = builders.add_rect(slide, left, top, w, 0.32, pal["bg"],
+                            line_hex=pal["accent3"], line_pt=1.0)
+    box.fill.background()  # outline only — works on photos and gradients
+    builders.add_tb(slide, label, left, top + 0.02, w, 0.28, size=11,
+                    bold=True, color=pal["text_muted"], font=pal["font_label"],
+                    align=PP_ALIGN.CENTER)
+
+
+def _add_kicker_box(slide, pal, text):
+    """Takeaway box: full-width accent-edged band above the source/footer."""
+    import builders
+    builders.add_rect(slide, 0.7, 6.18, 11.93, 0.52, pal["surface"])
+    builders.add_rect(slide, 0.7, 6.18, 0.06, 0.52, pal["accent1"])
+    builders.add_tb(slide, text, 0.95, 6.25, 11.4, 0.4, size=14, bold=True,
+                    color=pal["text"], font=pal["font_body"])
 
 
 def _add_source(slide, pal, source, exhibit_no=None):
@@ -731,11 +783,17 @@ def build(outline_path, output_path, palette_key=None,
                     slide = LAYOUT_MAP[layout_name](prs, p, pal, ctx)
             if p.get("notes"):
                 add_speaker_notes(slide, p["notes"])
+            section_label = "BACKUP" if p.get("_appendix") else current_section
             if not templated and layout_name not in NO_FOOTER_LAYOUTS:
                 _add_footer(slide, i, pal, footer, page_numbers,
                             appendix=p.get("_appendix", False))
-                _add_kicker(slide, pal,
-                            "BACKUP" if p.get("_appendix") else current_section)
+                _add_section_tracker(slide, pal, section_label)
+                if p.get("kicker"):
+                    _add_kicker_box(slide, pal, p["kicker"])
+            if not templated and p.get("sticker"):
+                _add_sticker(slide, pal, p["sticker"],
+                             below_section=bool(section_label)
+                             and layout_name not in NO_FOOTER_LAYOUTS)
             if not templated and p.get("source"):
                 exhibit_no += 1
                 _add_source(slide, pal, p["source"],

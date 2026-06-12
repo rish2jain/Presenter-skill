@@ -21,7 +21,8 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu
 
 PLACEHOLDER_RX = re.compile(
-    r"lorem|ipsum|xxxx|click to add|\[ add visual \]|placeholder|this page layout", re.I)
+    r"lorem|ipsum|xxxx|click to add|\[ add visual \]|placeholder"
+    r"|this.*(page|slide).*layout", re.I)
 MIN_PT = 10
 PROJECTION_BODY_PT = 18  # federal / Section 508 presentation guidance
 EMU_IN = 914400
