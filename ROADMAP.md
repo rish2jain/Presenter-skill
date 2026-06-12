@@ -217,7 +217,7 @@ Files: `scripts/build_deck.py`, new `scripts/gen_handout.py`, `scripts/palettes.
   deck-wide font fallback. Implement as palette post-processor in `get_palette` path
   guarded by a `set_cjk(True)` toggle decided in `build()` after parsing.
 
-## T11. Brand kit ingestion — `[ ]`
+## T11. Brand kit ingestion — `[x]`
 
 New `scripts/brand_kit.py`, `references/generation-guide.md` (palette section),
 `tests/test_brand_kit.py` (offline: HTML/CSS fixtures only).

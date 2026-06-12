@@ -511,3 +511,18 @@ any .pptx, including imported ones.
 All nine keys required; colors must be 6-char hex. Optional keys:
 `font_title`, `font_body`, `font_label`, `chart_series` (list of hex —
 chart series colors), `motif`. Then `--palette <name>`.
+
+**Brand kit ingestion:** generate a custom palette straight from a
+company's web presence instead of hand-writing the JSON:
+
+    python3 scripts/brand_kit.py acme.com --name acme --assets-dir assets
+
+Uses the Brandfetch API when `BRANDFETCH_API_KEY` is set (brand colors,
+font names, logo → `<assets>/brand/acme-logo.png`); otherwise scrapes the
+homepage plus linked same-origin CSS for hex/rgb() colors ranked by
+frequency. Colors are classified into the nine palette keys (most-frequent
+very-dark vs very-light color decides the theme; saturated candidates
+become accents) with a contrast guarantee — text ≥ 4.5:1 on bg/surface,
+accents ≥ 3.0:1 on bg. The result is validated through the custom-palette
+loader before `<assets>/palettes/acme.json` is written, and a swatch table
+(role, hex, contrast vs bg) is printed. Then build with `--palette acme`.
