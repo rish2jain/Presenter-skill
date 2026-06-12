@@ -324,6 +324,8 @@ def apply_scale_groups(meta, slides):
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
+NO_FOOTER_LAYOUTS = {"title", "closing", "section-divider", "full-image"}
+
 # Layouts whose headings should pass the consulting "titles test"
 ACTION_TITLE_LAYOUTS = {
     "bullet-list", "two-column-split", "exec-summary", "exec-summary-scqa",
@@ -408,6 +410,9 @@ def validate(slides, ctx, meta=None):
             if kick_words and len(kick_words & head_words) / len(kick_words) > 0.6:
                 warnings.append(f"{where}: kicker restates the title — "
                                 "make it advance the argument")
+        if p.get("kicker") and layout in NO_FOOTER_LAYOUTS:
+            warnings.append(f"{where}: Kicker is not rendered on '{layout}' "
+                            "layouts — move it to a content slide")
 
         if layout in ("title", "closing") and not p.get("title") and p.get("heading"):
             warnings.append(f"{where}: no '- Title:' — using '## Slide N:' heading "
@@ -612,7 +617,6 @@ def build_template_slide(prs, p, layout_name, ctx, config=None):
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 SIZES = {"16:9": (13.33, 7.5), "4:3": (10.0, 7.5)}
-NO_FOOTER_LAYOUTS = {"title", "closing", "section-divider", "full-image"}
 
 
 def create_presentation(template_path=None, size="16:9"):

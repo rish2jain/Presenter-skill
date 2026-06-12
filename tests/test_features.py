@@ -200,6 +200,18 @@ def test_kicker_advancing_argument_not_warned():
     assert not any("kicker restates" in w for w in warnings), warnings
 
 
+def test_kicker_on_no_footer_layout_warned():
+    for layout in ("title", "closing", "section-divider", "full-image"):
+        md = (f'## Slide 1: Opening\n'
+              f'**Layout:** {layout}\n'
+              '- Kicker: "Act now before the window closes"\n'
+              '- Notes: "n"\n')
+        meta, slides = parse_outline(md)
+        _, warnings = validate(slides, CTX, meta)
+        assert any("Kicker is not rendered" in w and layout in w
+                   for w in warnings), (layout, warnings)
+
+
 def test_heading_over_15_words_warned():
     heading = " ".join(["word"] * 16)
     md = (f'## Slide 1: {heading}\n'
