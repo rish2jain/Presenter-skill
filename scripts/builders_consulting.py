@@ -710,7 +710,7 @@ LAYOUTS["bar-mekko"] = build_bar_mekko_slide
 
 
 # ── heatmap table ────────────────────────────────────────────────────────────
-_CELL_NUM_RX = re.compile(r"-?\d[\d,]*\.?\d*")
+_CELL_NUM_RX = re.compile(r"-?(?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?")
 
 
 def _cell_value(cell):
@@ -735,7 +735,12 @@ def _bw_on(fill_hex):
 
 
 def _rag_fill(v, svals, pal):
-    """Tercile thresholds over the column's sorted values -> red/amber/green."""
+    """Tercile thresholds over the column's sorted values -> red/amber/green.
+
+    Note: with exactly 2 rows, t1 == svals[0] and t2 == svals[-1], so the
+    function yields rag_bad for the lower value and rag_good for the upper
+    (rag_mid is never returned in the 2-row case).
+    """
     if svals[0] == svals[-1]:
         return pal["rag_mid"]
     n = len(svals)
@@ -763,6 +768,10 @@ def build_heatmap_slide(prs, p, pal, ctx):
     for c in range(n_cols):
         nums = [_cell_value(r[c]) for r in rows[1:] if c < len(r)]
         col_vals.append(sorted(v for v in nums if v is not None))
+
+    n_body_rows = len(rows) - 1  # exclude header
+    if n_body_rows > 12:
+        warn(f"heatmap-table with {n_body_rows} rows — consider splitting")
 
     first_col_w = 3.2
     col_w = (11.9 - first_col_w) / max(n_cols - 1, 1)
@@ -794,8 +803,13 @@ def build_heatmap_slide(prs, p, pal, ctx):
                 fill = _lerp_hex(pal["bg"], pal["accent1"], t)
                 text_color = _bw_on(fill)
             B.add_rect(slide, x + 0.03, y, w - 0.06, row_h, fill)
+            # when rows are very dense (row_h < 0.35) shrink the text box
+            # height to match and drop font size to 10 so text doesn't overflow
+            cell_tb_h = min(0.35, row_h)
+            cell_font = 10 if row_h < 0.35 else 12
             B.add_tb(slide, cell, x + (0.12 if c == 0 else 0),
-                     y + row_h / 2 - 0.16, w, 0.35, size=12, color=text_color,
+                     y + row_h / 2 - cell_tb_h / 2, w, cell_tb_h,
+                     size=cell_font, color=text_color,
                      align=PP_ALIGN.CENTER if c else PP_ALIGN.LEFT,
                      font=pal["font_body"])
     return slide
@@ -828,7 +842,7 @@ def build_tornado_slide(prs, p, pal, ctx):
     half_w = cx - gutter - 0.7 - val_w
     vmax = max(max(abs(v[0]), abs(v[1])) for _, v in rows) or 1
     row_h = min(0.78, (bottom - top) / len(rows))
-    bar_h = min(0.42, row_h - 0.16)
+    bar_h = max(0.04, min(0.42, row_h - 0.16))
 
     names = [s.strip() for s in p.get("series", "").split(",") if s.strip()]
     if len(names) >= 2:  # side headers above the two bar areas
@@ -915,7 +929,7 @@ def build_football_field_slide(prs, p, pal, ctx):
 
     from palettes import hex_rgb
     row_h = min(0.9, (bottom - top) / len(rows))
-    bar_h = min(0.46, row_h - 0.22)
+    bar_h = max(0.04, min(0.46, row_h - 0.22))
     for i, (label, lo, hi) in enumerate(rows):
         y = top + i * row_h + (row_h - bar_h) / 2
         x0, x1 = vx(lo), vx(hi)
@@ -963,7 +977,9 @@ def _football_marker(slide, p, pal, top, bottom, vx, gmin, gmax):
     conn.line.color.rgb = hex_rgb(pal["accent3"])
     conn.line.width = Pt(1.75)
     conn.line.dash_style = MSO_LINE_DASH_STYLE.DASH
-    B.add_tb(slide, f"{label} · {_fmt_plain(value)}", x - 1.2, top - 0.46,
+    # clamp 2.4in-wide label so it stays within canvas (right edge <= 12.63)
+    label_left = max(0.7, min(x - 1.2, 12.63 - 2.4))
+    B.add_tb(slide, f"{label} · {_fmt_plain(value)}", label_left, top - 0.46,
              2.4, 0.3, size=11, bold=True, color=pal["text_muted"],
              align=PP_ALIGN.CENTER, font=pal["font_label"])
 

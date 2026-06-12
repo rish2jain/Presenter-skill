@@ -467,3 +467,106 @@ def test_matrix_bubble_clamped_inside_plot():
         if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE and s.width == s.height \
                 and s.width / EMU_IN > 0.1:
             assert s.left + s.width <= plot_right + 100, "bubble escapes plot"
+
+
+# ── I1: football-field bar_h floor at 18 rows ────────────────────────────────
+def _make_football_md(n_rows):
+    rows = "\n".join(f"- Method{i}: {30 + i}, {50 + i}" for i in range(n_rows))
+    return (
+        f"## Slide 1: Valuation range from {n_rows} methods\n"
+        "**Layout:** football-field\n"
+        "**Series:** Low, High\n"
+        "**Data:**\n"
+        f"{rows}\n"
+    )
+
+
+def test_football_field_18_rows_positive_bar_heights():
+    """bar_h must not go negative when row_h < 0.22 (18+ rows)."""
+    from builders_consulting import build_football_field_slide
+    from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
+    _, slides = parse_outline(_make_football_md(18))
+    slide = build_football_field_slide(_prs(), slides[0], PAL, CTX)
+    bars = [s for s in slide.shapes
+            if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+            and s.auto_shape_type == MSO_SHAPE.ROUNDED_RECTANGLE]
+    assert len(bars) == 18
+    for bar in bars:
+        assert bar.height.inches > 0, f"bar height {bar.height.inches} <= 0"
+
+
+# ── I3: football-field marker label clamped when near global max ──────────────
+def test_football_marker_label_right_edge_clamped():
+    """Label right edge must stay <= 12.63in when marker is at the global max."""
+    from builders_consulting import build_football_field_slide
+    # marker at 58 = global max of the default FOOTBALL_MD data
+    md = FOOTBALL_MD.replace("Current price, 47", "Current price, 58")
+    _, slides = parse_outline(md)
+    slide = build_football_field_slide(_prs(), slides[0], PAL, CTX)
+    EMU_IN = 914400
+    max_right = 12.63 * EMU_IN
+    label_tbs = [s for s in slide.shapes
+                 if getattr(s, "has_text_frame", False)
+                 and "Current price" in s.text_frame.text]
+    assert label_tbs, "marker label text box not found"
+    for tb in label_tbs:
+        right_edge = (tb.left + tb.width) / EMU_IN
+        assert right_edge <= 12.63 + 0.01, (
+            f"label right edge {right_edge:.3f}in exceeds 12.63in")
+
+
+# ── I2: _cell_value treats malformed comma groups as non-numeric ──────────────
+def test_cell_value_rejects_bad_comma_grouping():
+    """'10,0' must NOT parse as numeric — surface fill should be used."""
+    from builders_consulting import _cell_value
+    assert _cell_value("10,0") is None, "'10,0' should be non-numeric"
+    assert _cell_value("1,000") == 1000.0
+    assert _cell_value("1,234,567") == 1234567.0
+    assert _cell_value("$1,200") == 1200.0
+    assert _cell_value("42%") == 42.0
+
+
+def test_heatmap_bad_comma_cell_gets_surface_fill():
+    """A cell like '10,0' is non-numeric and should receive the surface fill."""
+    from builders_consulting import build_heatmap_slide
+    md = """## Slide 1: Mixed numeric and bad comma cell
+**Layout:** heatmap-table
+| Category | Score |
+|---|---|
+| A | 10,0 |
+| B | 20 |
+| C | 30 |
+"""
+    _, slides = parse_outline(md)
+    slide = build_heatmap_slide(_prs(), slides[0], PAL, CTX)
+    fills = _fills(slide)
+    # surface fill must be present (the non-numeric '10,0' cell)
+    assert PAL["surface"] in fills, f"expected surface fill for '10,0' cell; fills={fills}"
+
+
+# ── I4: heatmap with 15 rows builds and warns ────────────────────────────────
+def _make_heatmap_md(n_body_rows):
+    header = "| Metric | Score |\n|---|---|\n"
+    rows = "\n".join(f"| Item{i} | {i * 3} |" for i in range(1, n_body_rows + 1))
+    return (
+        f"## Slide 1: Dense heatmap with {n_body_rows} rows\n"
+        "**Layout:** heatmap-table\n"
+        + header + rows + "\n"
+    )
+
+
+def test_heatmap_15_rows_builds_and_warns(capsys):
+    """15-row heatmap must build without error and emit a density warning."""
+    from builders_consulting import build_heatmap_slide
+    _, slides = parse_outline(_make_heatmap_md(15))
+    slide = build_heatmap_slide(_prs(), slides[0], PAL, CTX)
+    # must produce at least 15 body rects
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+    rects = [s for s in slide.shapes
+             if s.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+             and s.height.inches > 0]
+    assert len(rects) >= 15
+    # warning must have been emitted
+    err = capsys.readouterr().err
+    assert "15" in err and "heatmap-table" in err, (
+        f"expected density warning in stderr; got: {err!r}")
