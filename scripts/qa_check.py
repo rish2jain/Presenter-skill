@@ -6,11 +6,16 @@ Usage:
     python3 scripts/qa_check.py deck.pptx
     python3 scripts/qa_check.py deck.pptx --text
     python3 scripts/qa_check.py deck.pptx --accessibility   # WCAG AA strict mode
+    python3 scripts/qa_check.py deck.pptx --integrity       # OOXML schema audit
 
 Checks include bounds, placeholders, contrast, chart transparency, unique slide
-titles, projection font sizes, image alt text, and text density.
+titles, projection font sizes, image alt text, and text density. --integrity
+adds OOXML schema validation via the optional openxml-audit package (module or
+CLI); when it is not installed the step prints an info line and is skipped.
 """
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -372,9 +377,64 @@ def dump_numbers(pptx_path):
         print(f"Slide {n} [{title[:60]}]: {', '.join(tokens) if tokens else '—'}")
 
 
+def _integrity_via_module(mod, pptx_path):
+    """Validate via an importable openxml_audit module. The package's API is
+    probed defensively (validate/audit/check, called with the file path and
+    expected to return an iterable of error strings/objects). Returns a list
+    of error strings, or None when no recognized entry point exists."""
+    fn = next((getattr(mod, name) for name in ("validate", "audit", "check")
+               if callable(getattr(mod, name, None))), None)
+    if fn is None:
+        print("  [WARN] openxml-audit installed but exposes no "
+              "validate/audit/check entry point — integrity check skipped",
+              file=sys.stderr)
+        return None
+    result = fn(str(pptx_path))
+    return [str(item) for item in result] if result else []
+
+
+def _integrity_via_cli(cli, pptx_path):
+    """Validate via an `openxml-audit <file>` CLI on PATH. Non-zero exit →
+    each non-empty output line becomes an integrity error."""
+    try:
+        r = subprocess.run([cli, str(pptx_path)],
+                           capture_output=True, text=True, timeout=120)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return [f"openxml-audit CLI failed ({exc.__class__.__name__})"]
+    if r.returncode == 0:
+        return []
+    lines = [ln.strip() for ln in (r.stdout + "\n" + r.stderr).splitlines()
+             if ln.strip()]
+    return lines or [f"openxml-audit exited {r.returncode}"]
+
+
+def run_integrity(pptx_path):
+    """OOXML schema validation via the optional openxml-audit package.
+
+    Returns a list of error strings (empty = valid). When the package is not
+    installed (neither importable module nor CLI on PATH) prints a single
+    info line and returns [] — never a failure."""
+    try:
+        import openxml_audit  # pip name: openxml-audit
+    except ImportError:
+        openxml_audit = None
+    if openxml_audit is not None:
+        errors = _integrity_via_module(openxml_audit, pptx_path)
+        if errors is not None:
+            return errors
+        return []  # module present but unusable — warned above, skip
+    cli = shutil.which("openxml-audit")
+    if cli:
+        return _integrity_via_cli(cli, pptx_path)
+    print("  [INFO] pip install openxml-audit for OOXML schema validation "
+          "(skipped)")
+    return []
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: qa_check.py deck.pptx [--text] [--numbers] [--accessibility]")
+        print("Usage: qa_check.py deck.pptx [--text] [--numbers] "
+              "[--accessibility] [--integrity]")
         sys.exit(2)
     path = Path(sys.argv[1])
     if "--numbers" in sys.argv:
@@ -385,6 +445,8 @@ def main():
         sys.exit(0)
     accessibility = "--accessibility" in sys.argv
     issues = check_deck(path, accessibility=accessibility)
+    if "--integrity" in sys.argv:
+        issues["error"].extend(f"integrity: {e}" for e in run_integrity(path))
     for e in issues["error"]:
         print(f"  [ERROR] {e}")
     for w in issues["warn"]:

@@ -8,3 +8,5 @@ pytest>=8.0.0,<9
 # pillow-heif>=0.16.0
 # Optional icon fallback:
 # cairosvg>=2.7.0
+# optional: openxml-audit  (qa_check --integrity OOXML schema validation)
+# optional: imagehash  (visual_regress.py perceptual hashing)

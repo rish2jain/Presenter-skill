@@ -28,6 +28,13 @@ Beyond the stricter contrast (4.5:1) and body-font floor (18pt), accessibility m
 - **Alt text:** missing alt text escalates to error, and alt text that is just a filename (`hero.png`, `image3`) is an error too — describe the image instead.
 - **Reading order:** warns when the title shape is not the first text-bearing shape in document order (screen readers announce content in spTree order, not visual order).
 
+**OOXML integrity** (optional schema validation):
+```bash
+python3 scripts/qa_check.py output.pptx --integrity
+```
+
+With the optional `openxml-audit` package installed (`pip install openxml-audit`), `--integrity` validates the .pptx OOXML structure and reports schema problems as errors prefixed `integrity:` (they fail the gate like any other error). Without the package it prints a single `[INFO] pip install openxml-audit …` line and is skipped — never a failure. The CI smoke test runs this as an advisory step.
+
 For a proofreading pass (typos, wrong numbers, leftover draft phrasing):
 ```bash
 python3 scripts/qa_check.py output.pptx --text
@@ -142,6 +149,27 @@ Flag any of the following:
 ## Step 4 — Final Gate
 
 Re-run `python3 scripts/qa_check.py output.pptx` after the last fix — it must exit 0 (no errors) before delivery.
+
+---
+
+## Revision regression (before sending a revised deck)
+
+A revision should change exactly the slides you touched — anything else is collateral damage (reflowed text, a shifted chart, a renumbered footer). Keep the thumbnails of the last-delivered deck as a baseline and diff every revision against it:
+
+```bash
+python3 scripts/render_slides.py revised.pptx --out assets/qa-current/
+python3 scripts/visual_regress.py assets/qa-baseline/ assets/qa-current/ [--threshold N]
+```
+
+- Same-named slide PNGs are compared by perceptual hash — pHash via the optional `imagehash` package when installed, else a built-in Pillow-only average hash. Hamming distance > 5 (tune with `--threshold`) flags the slide and reports a coarse pixel-diff percentage.
+- **New slides** (present only in current) are reported as `new (no baseline)` — a warning, not a failure.
+- **Deleted slides** (present only in baseline) are failures — removing content must be deliberate.
+- Exit 1 on any changed or missing slide. Verify every flagged slide is an intended edit before sending.
+- After delivering, bless the new render as the next baseline:
+  ```bash
+  python3 scripts/visual_regress.py assets/qa-baseline/ assets/qa-current/ --update
+  ```
+  `--update` also initializes a missing baseline on first delivery (and a run against a missing baseline without `--update` exits with instructions to do exactly that).
 
 ---
 

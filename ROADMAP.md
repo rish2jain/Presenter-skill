@@ -235,7 +235,7 @@ New `scripts/brand_kit.py`, `references/generation-guide.md` (palette section),
 - Network failures → clear error, no partial files. Tests run entirely on local fixture
   HTML/CSS (no network).
 
-## T12. Deck integrity + visual regression — `[ ]`
+## T12. Deck integrity + visual regression — `[x]`
 
 New `scripts/visual_regress.py`; `scripts/qa_check.py` (integrity hook);
 `requirements.txt` comments; `references/qa-guide.md`; `tests/test_regress.py`.
